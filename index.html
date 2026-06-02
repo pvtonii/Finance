@@ -2786,7 +2786,14 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--space-2);
+  gap: var(--space-2);
 }
+.upcoming-view-toggle { display:flex; gap:2px; background:var(--bg-tertiary); border-radius:var(--radius-full); padding:2px; flex-shrink:0; }
+.uv-tab { font-size:0.625rem; font-weight:500; padding:2px 8px; border-radius:var(--radius-full); border:none; background:none; color:var(--text-tertiary); cursor:pointer; white-space:nowrap; }
+.uv-tab.active { background:var(--text-primary); color:var(--bg-primary); }
+.upcoming-skip { flex-shrink:0; background:var(--bg-tertiary); color:var(--text-tertiary); border:1px solid var(--border-subtle); padding:6px 10px; border-radius:var(--radius-md); font-size:0.75rem; font-weight:500; cursor:pointer; white-space:nowrap; transition:all var(--duration); }
+.upcoming-skip:active { background:var(--danger); color:white; border-color:var(--danger); }
+@media (hover:hover) { .upcoming-skip:hover { background:var(--danger); color:white; border-color:var(--danger); } }
 .upcoming-title {
   font-size: 0.6875rem;
   font-weight: 500;
@@ -3208,7 +3215,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 44 · Jun 2, 2026</div>
+          <div class="app-version">Version 45 · Jun 2, 2026</div>
         </div>
       </div>
     </section>
@@ -4755,7 +4762,9 @@ const Settings = {
           <div class="item-meta">
             <span class="owner-tag ${s.owner}">${this.ownerLabel(s.owner)}</span>
             <span>·</span>
-            <span>Day ${s.billing_day}</span>
+            ${s.billing_frequency === 'quinzenal'
+              ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;">↻ 2 weeks</span>`
+              : `<span>Day ${s.billing_day}</span>`}
             <span>·</span>
             <span>${escapeHtml(sourceLabel)}</span>
           </div>
@@ -5249,7 +5258,7 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
       <label class="form-label">Frequency</label>
       <div class="cards-owner-tabs" id="sub-freq-toggle" style="margin-bottom:0;">
         <button class="cards-owner-tab ${selectedFrequency === 'monthly' ? 'active' : ''}" data-freq="monthly">Monthly</button>
-        <button class="cards-owner-tab ${selectedFrequency === 'quinzenal' ? 'active' : ''}" data-freq="quinzenal">Every 15 days</button>
+        <button class="cards-owner-tab ${selectedFrequency === 'quinzenal' ? 'active' : ''}" data-freq="quinzenal">Every 2 weeks</button>
       </div>
     </div>
 
@@ -7182,12 +7191,17 @@ async function confirmRecurrence(subscriptionId, specificDate = null) {
   const s = State.subscriptions.find(x => x.id === subscriptionId);
   if (!s) return toast('Recurrence not found', 'error');
 
-  const isQuinzenal = s.billing_frequency === 'quinzenal' && specificDate;
+  const isQuinzenal = s.billing_frequency === 'quinzenal';
 
   let date, monthKey;
   if (isQuinzenal) {
+    // Quinzenal always needs a specific occurrence date
     date = specificDate;
     monthKey = null; // quinzenal uses confirmed_dates instead
+  } else if (specificDate) {
+    // Monthly past-due confirm: use the given date + its own month
+    date = specificDate;
+    monthKey = specificDate.substring(0, 7) + '-01';
   } else {
     const today = new Date();
     const year = today.getFullYear();
@@ -7245,6 +7259,52 @@ async function confirmRecurrence(subscriptionId, specificDate = null) {
           Dashboard.render();
           Transactions.render();
           toast(`${s.name} undone`);
+        } catch (err) {
+          toast('Undo failed: ' + err.message, 'error');
+        }
+      },
+    });
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  }
+}
+
+/**
+ * Skip a recurrence — marks it as handled (removed from pending + EOM projection)
+ * WITHOUT creating any transaction. Used when a recurring item didn't actually happen.
+ */
+async function skipRecurrence(subscriptionId, specificDate = null) {
+  const s = State.subscriptions.find(x => x.id === subscriptionId);
+  if (!s) return toast('Recurrence not found', 'error');
+
+  const isQuinzenal = s.billing_frequency === 'quinzenal';
+  const prevConfirmed = JSON.parse(s.confirmed_dates || '[]');
+
+  try {
+    let monthKeyBefore = s.last_confirmed_month;
+    if (isQuinzenal && specificDate) {
+      const cutoff = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
+      const prev = prevConfirmed.filter(d => d >= cutoff);
+      await Data.updateSubscription(s.id, { confirmed_dates: JSON.stringify([...prev, specificDate]) });
+    } else {
+      const monthKey = specificDate ? specificDate.substring(0, 7) + '-01'
+        : (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; })();
+      await Data.updateSubscription(s.id, { last_confirmed_month: monthKey });
+    }
+
+    Dashboard.render();
+
+    toast(`${s.name} skipped`, 'success', {
+      label: 'Undo',
+      onClick: async () => {
+        try {
+          if (isQuinzenal && specificDate) {
+            await Data.updateSubscription(s.id, { confirmed_dates: JSON.stringify(prevConfirmed) });
+          } else {
+            await Data.updateSubscription(s.id, { last_confirmed_month: monthKeyBefore });
+          }
+          Dashboard.render();
+          toast(`${s.name} restored`);
         } catch (err) {
           toast('Undo failed: ' + err.message, 'error');
         }
@@ -8199,11 +8259,8 @@ const Cards = {
 
 
 const Dashboard = {
-  /* Renders:
-     - 3 cards: Today / Due This Month / End of Month
-     - Movimentação do mês (entradas/saídas)
-     - Saldo PV / Gigi
-     - Resumo de cartões com barrinhas de crédito */
+  upcomingView: 'current', // 'current' | 'past'
+
   render() {
     const today = this.calcTodayBalance();
 
@@ -8413,34 +8470,118 @@ const Dashboard = {
     return { items, accountExpense, income };
   },
 
+  calcRecurrencesPastDue() {
+    const today = new Date();
+    const prevMonth = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
+    const prevYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+    const prevYM = prevYear + '-' + String(prevMonth + 1).padStart(2, '0');
+    const items = [];
+
+    State.subscriptions.filter(s => s.is_active !== false).forEach(s => {
+      if (s.billing_frequency === 'quinzenal' && s.billing_start_date) {
+        const confirmedDates = JSON.parse(s.confirmed_dates || '[]');
+        getQuinzenalOccurrences(s.billing_start_date, prevYear, prevMonth).forEach(dateStr => {
+          if (!confirmedDates.includes(dateStr)) items.push({ ...s, _past_date: dateStr });
+        });
+        return;
+      }
+      // Monthly: not confirmed in previous month
+      if (!s.last_confirmed_month || !s.last_confirmed_month.startsWith(prevYM)) {
+        const lastDay = new Date(prevYear, prevMonth + 1, 0).getDate();
+        const day = Math.min(Number(s.billing_day) || 1, lastDay);
+        const dateStr = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        items.push({ ...s, _past_date: dateStr });
+      }
+    });
+
+    items.sort((a, b) => (a._past_date || '').localeCompare(b._past_date || ''));
+    return items;
+  },
+
   renderUpcoming(items, pendingCards = []) {
     const container = document.getElementById('dash-upcoming');
     if (!container) return;
 
-    if (!items.length && !pendingCards.length) {
-      container.innerHTML = '';
-      return;
-    }
+    const view = this.upcomingView;
+    const pastItems = this.calcRecurrencesPastDue();
+    const hasCurrent = items.length > 0 || pendingCards.length > 0;
+    const hasPast = pastItems.length > 0;
 
-    const total = items.length + pendingCards.length;
+    // Nothing anywhere → hide the whole card (and reset to current view)
+    if (!hasCurrent && !hasPast) { container.innerHTML = ''; this.upcomingView = 'current'; return; }
+
+    // Only show the Past tab when there's actually something past
+    const toggle = hasPast ? `
+      <div class="upcoming-view-toggle">
+        <button class="uv-tab ${view === 'current' ? 'active' : ''}" data-upcoming-view="current">This month</button>
+        <button class="uv-tab ${view === 'past' ? 'active' : ''}" data-upcoming-view="past">Past</button>
+      </div>` : '';
+
+    const currentCount = items.length + pendingCards.length;
+    const title = view === 'current' ? 'Upcoming this month' : 'Past unconfirmed';
+    const count = view === 'current' ? currentCount : pastItems.length;
+
     container.innerHTML = `
       <div class="card upcoming-card fade-in">
         <div class="upcoming-header">
-          <span class="upcoming-title">Upcoming this month</span>
-          <span class="upcoming-count">${total}</span>
+          <span class="upcoming-title">${title}</span>
+          <div style="display:flex;align-items:center;gap:var(--space-2);">
+            <span class="upcoming-count">${count}</span>
+            ${toggle}
+          </div>
         </div>
-        ${pendingCards.map(c => this.upcomingCardRow(c)).join('')}
-        ${items.map(s => this.upcomingRow(s)).join('')}
+        ${view === 'current' ? `
+          ${!hasCurrent ? `<div style="font-size:0.8125rem;color:var(--text-tertiary);padding:var(--space-2) 0;">Nothing left this month. Check <strong>Past</strong> for missed items.</div>` : ''}
+          ${pendingCards.map(c => this.upcomingCardRow(c)).join('')}
+          ${items.map(s => this.upcomingRow(s)).join('')}
+        ` : `
+          ${pastItems.length === 0 ? `<div style="font-size:0.8125rem;color:var(--text-tertiary);padding:var(--space-2) 0;">All caught up — nothing unconfirmed last month.</div>` : ''}
+          ${pastItems.map(s => this.upcomingPastRow(s)).join('')}
+        `}
       </div>
     `;
 
     container.querySelectorAll('[data-confirm-rec]').forEach(btn => {
       btn.addEventListener('click', () => {
-        btn.disabled = true;
-        btn.textContent = '✓';
+        btn.disabled = true; btn.textContent = '✓';
         confirmRecurrence(btn.dataset.confirmRec, btn.dataset.confirmDate || null);
       });
     });
+    container.querySelectorAll('[data-skip-rec]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.disabled = true; btn.textContent = '✗';
+        skipRecurrence(btn.dataset.skipRec, btn.dataset.skipDate || null);
+      });
+    });
+    container.querySelectorAll('[data-upcoming-view]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        Dashboard.upcomingView = btn.dataset.upcomingView;
+        Dashboard.render();
+      });
+    });
+  },
+
+  upcomingPastRow(s) {
+    const isIncome = s.type === 'income';
+    const isCard = !!s.card_id;
+    const source = isCard ? State.cards.find(c => c.id === s.card_id) : State.accounts.find(a => a.id === s.account_id);
+    const sourceLabel = source ? (isCard ? '💳 ' : '🏦 ') + source.name : '— no source';
+    const icon = isIncome ? '💰' : '🔁';
+    const sign = isIncome ? '+' : '-';
+    const amountClass = isIncome ? 'text-success' : 'text-danger';
+    const dateLabel = new Date(s._past_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `
+      <div class="upcoming-row">
+        <div class="upcoming-icon" style="opacity:0.6;">${icon}</div>
+        <div class="upcoming-info">
+          <div class="upcoming-name" style="opacity:0.7;">${escapeHtml(s.name)}</div>
+          <div class="upcoming-meta">${dateLabel} · ${escapeHtml(sourceLabel)}</div>
+        </div>
+        <div class="upcoming-amount ${amountClass}">${sign}${App.formatCurrency(s.amount)}</div>
+        <button class="upcoming-confirm" data-confirm-rec="${s.id}" data-confirm-date="${s._past_date}">✓</button>
+        <button class="upcoming-skip" data-skip-rec="${s.id}" data-skip-date="${s._past_date}">✗</button>
+      </div>
+    `;
   },
 
   upcomingCardRow(card) {
@@ -8475,7 +8616,7 @@ const Dashboard = {
     const metaDate = s._occurrence_date
       ? new Date(s._occurrence_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       : `Day ${s.billing_day}`;
-    const biweeklyBadge = s._occurrence_date ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;margin-left:4px;">↻ biweekly</span>` : '';
+    const biweeklyBadge = s._occurrence_date ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;margin-left:4px;">↻ 2 weeks</span>` : '';
 
     return `
       <div class="upcoming-row">
@@ -8485,7 +8626,8 @@ const Dashboard = {
           <div class="upcoming-meta">${metaDate} · ${escapeHtml(sourceLabel)}</div>
         </div>
         <div class="upcoming-amount ${amountClass}">${sign}${App.formatCurrency(s.amount)}</div>
-        <button class="upcoming-confirm" data-confirm-rec="${s.id}" data-confirm-date="${s._occurrence_date || ''}">✓ Confirm</button>
+        <button class="upcoming-confirm" data-confirm-rec="${s.id}" data-confirm-date="${s._occurrence_date || ''}">✓</button>
+        <button class="upcoming-skip" data-skip-rec="${s.id}" data-skip-date="${s._occurrence_date || ''}">✗</button>
       </div>
     `;
   },
