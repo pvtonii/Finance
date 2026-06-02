@@ -790,6 +790,7 @@ h1, h2, h3 {
 .modal-overlay.active {
   opacity: 1;
   pointer-events: auto;
+  touch-action: none;
 }
 
 .modal {
@@ -3203,7 +3204,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 42 · May 29, 2026</div>
+          <div class="app-version">Version 43 · Jun 2, 2026</div>
         </div>
       </div>
     </section>
@@ -3404,6 +3405,20 @@ const Connection = {
 };
 
 let db = null;
+
+function getQuinzenalOccurrences(startDateStr, year, month) {
+  const start = new Date(startDateStr + 'T12:00:00');
+  const monthStart = new Date(year, month, 1);
+  const monthEnd = new Date(year, month + 1, 0);
+  const dates = [];
+  let cur = new Date(start);
+  while (cur < monthStart) cur = new Date(cur.getTime() + 15 * 86400000);
+  while (cur <= monthEnd) {
+    dates.push(cur.toISOString().split('T')[0]);
+    cur = new Date(cur.getTime() + 15 * 86400000);
+  }
+  return dates;
+}
 
 function initSupabaseClient() {
   const conn = Connection.get();
@@ -4431,12 +4446,16 @@ const Modal = {
     document.getElementById('modal-body').innerHTML = bodyHtml;
     document.getElementById('modal-overlay').classList.add('active');
     document.getElementById('modal').classList.add('active');
-    document.body.style.overflow = 'hidden';
+    // iOS PWA scroll lock: position:fixed prevents background scroll on iOS
+    const scrollY = window.scrollY;
+    document.body.style.cssText = `overflow:hidden;position:fixed;top:-${scrollY}px;width:100%;`;
   },
   close() {
     document.getElementById('modal-overlay').classList.remove('active');
     document.getElementById('modal').classList.remove('active');
-    document.body.style.overflow = '';
+    const scrollY = Math.abs(parseInt(document.body.style.top || '0'));
+    document.body.style.cssText = '';
+    window.scrollTo(0, scrollY);
   },
 };
 document.getElementById('modal-overlay').addEventListener('click', () => Modal.close());
@@ -5184,7 +5203,9 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
   const s = subscription || {
     name: '', amount: '', billing_day: 1, type: kindType,
     account_id: null, card_id: null, category_id: null, owner: (Auth.getSession()?.userId || 'pv'), is_active: true,
+    billing_frequency: 'monthly', billing_start_date: null,
   };
+  let selectedFrequency = s.billing_frequency || 'monthly';
 
   // Pre-select source based on kind
   let selectedSource = kindForcesCard ? 'card' : 'account';
@@ -5218,9 +5239,23 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
     </div>
 
     <div class="form-field">
+      <label class="form-label">Frequency</label>
+      <div class="cards-owner-tabs" id="sub-freq-toggle" style="margin-bottom:0;">
+        <button class="cards-owner-tab ${selectedFrequency === 'monthly' ? 'active' : ''}" data-freq="monthly">Monthly</button>
+        <button class="cards-owner-tab ${selectedFrequency === 'quinzenal' ? 'active' : ''}" data-freq="quinzenal">Every 15 days</button>
+      </div>
+    </div>
+
+    <div class="form-field" id="sub-day-field" ${selectedFrequency === 'quinzenal' ? 'style="display:none;"' : ''}>
       <label class="form-label">Billing day</label>
-      <input class="form-input" id="sub-day" type="number" min="1" max="31" value="${s.billing_day}">
+      <input class="form-input" id="sub-day" type="number" min="1" max="31" value="${s.billing_day || 1}">
       <div class="form-help">Day of the month it gets charged / received</div>
+    </div>
+
+    <div class="form-field" id="sub-start-field" ${selectedFrequency !== 'quinzenal' ? 'style="display:none;"' : ''}>
+      <label class="form-label">Start date</label>
+      <input class="form-input" id="sub-start-date" type="date" value="${s.billing_start_date || new Date().toISOString().split('T')[0]}">
+      <div class="form-help">Date of the first / next payment</div>
     </div>
 
     ${kindForcesCard ? `
@@ -5280,6 +5315,15 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
 
   bindOwnerToggle();
 
+  document.getElementById('sub-freq-toggle')?.querySelectorAll('[data-freq]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedFrequency = btn.dataset.freq;
+      document.querySelectorAll('#sub-freq-toggle [data-freq]').forEach(b => b.classList.toggle('active', b === btn));
+      document.getElementById('sub-day-field').style.display = selectedFrequency === 'quinzenal' ? 'none' : '';
+      document.getElementById('sub-start-field').style.display = selectedFrequency === 'quinzenal' ? '' : 'none';
+    });
+  });
+
   setTimeout(() => document.getElementById('sub-amount').focus(), 300);
 
   // Save
@@ -5288,14 +5332,16 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
     const amountStr = document.getElementById('sub-amount').value.replace(/[^0-9.,]/g, '').replace(',', '.');
     const amount = parseFloat(amountStr);
     const name = document.getElementById('sub-name').value.trim();
-    const billing_day = parseInt(document.getElementById('sub-day').value, 10);
+    const billing_day = selectedFrequency === 'quinzenal' ? 1 : parseInt(document.getElementById('sub-day').value, 10);
+    const billing_start_date = selectedFrequency === 'quinzenal' ? (document.getElementById('sub-start-date').value || null) : null;
     const owner = getSelectedOwner();
     const activeEl = document.getElementById('sub-active');
     const is_active = activeEl ? activeEl.checked : true;
 
     if (!name) return toast('Please enter a name', 'error');
     if (!amount || amount <= 0) return toast('Please enter a valid amount', 'error');
-    if (!billing_day || billing_day < 1 || billing_day > 31) return toast('Invalid billing day', 'error');
+    if (selectedFrequency === 'quinzenal' && !billing_start_date) return toast('Please enter a start date', 'error');
+    if (selectedFrequency === 'monthly' && (!billing_day || billing_day < 1 || billing_day > 31)) return toast('Invalid billing day', 'error');
 
     // Warn about duplicate names (only on create or rename)
     const lowerName = name.toLowerCase();
@@ -5331,6 +5377,8 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
       const data = {
         name, amount, billing_day, type: selectedType,
         account_id, card_id, category_id, owner, is_active,
+        billing_frequency: selectedFrequency,
+        billing_start_date,
         created_by: Auth.getSession()?.userId,
       };
       if (isEdit) {
@@ -7123,22 +7171,27 @@ function openPayStatementForm(cardId, invoiceMonth) {
  * Confirm a recurrence — creates a real transaction and marks the
  * subscription as confirmed for this month.
  */
-async function confirmRecurrence(subscriptionId) {
+async function confirmRecurrence(subscriptionId, specificDate = null) {
   const s = State.subscriptions.find(x => x.id === subscriptionId);
   if (!s) return toast('Recurrence not found', 'error');
 
-  // Date: billing_day of current month
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth();
-  // Clamp billing_day to month's last day
-  const lastDay = new Date(year, month + 1, 0).getDate();
-  const day = Math.min(Number(s.billing_day) || 1, lastDay);
-  const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const isQuinzenal = s.billing_frequency === 'quinzenal' && specificDate;
+
+  let date, monthKey;
+  if (isQuinzenal) {
+    date = specificDate;
+    monthKey = null; // quinzenal uses confirmed_dates instead
+  } else {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const day = Math.min(Number(s.billing_day) || 1, lastDay);
+    date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    monthKey = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  }
 
   try {
-    // Create the transaction
     const txData = {
       type: s.type,
       amount: Number(s.amount) || 0,
@@ -7158,8 +7211,15 @@ async function confirmRecurrence(subscriptionId) {
     }
     const createdTx = await Data.createTransaction(txData);
 
-    // Mark subscription as confirmed for this month
-    await Data.updateSubscription(s.id, { last_confirmed_month: monthKey });
+    if (isQuinzenal) {
+      // Add date to confirmed_dates, trim entries older than 60 days
+      const cutoff = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
+      const prev = JSON.parse(s.confirmed_dates || '[]').filter(d => d >= cutoff);
+      const newDates = JSON.stringify([...prev, specificDate]);
+      await Data.updateSubscription(s.id, { confirmed_dates: newDates });
+    } else {
+      await Data.updateSubscription(s.id, { last_confirmed_month: monthKey });
+    }
 
     Dashboard.render();
     Transactions.render();
@@ -7169,7 +7229,12 @@ async function confirmRecurrence(subscriptionId) {
       onClick: async () => {
         try {
           await Data.deleteTransaction(createdTx.id);
-          await Data.updateSubscription(s.id, { last_confirmed_month: null });
+          if (isQuinzenal) {
+            const prev = JSON.parse(s.confirmed_dates || '[]').filter(d => d !== specificDate);
+            await Data.updateSubscription(s.id, { confirmed_dates: JSON.stringify(prev) });
+          } else {
+            await Data.updateSubscription(s.id, { last_confirmed_month: null });
+          }
           Dashboard.render();
           Transactions.render();
           toast(`${s.name} undone`);
@@ -8301,23 +8366,38 @@ const Dashboard = {
 
     State.subscriptions.forEach(s => {
       if (!s.is_active) return;
-      // Skip if already confirmed for this month
-      if (s.last_confirmed_month && s.last_confirmed_month.startsWith(ym.substring(0, 7))) return;
-
-      items.push(s);
-
       const amount = Number(s.amount) || 0;
+
+      // Quinzenal (every 15 days) — generate each occurrence as a separate item
+      if (s.billing_frequency === 'quinzenal' && s.billing_start_date) {
+        const confirmedDates = JSON.parse(s.confirmed_dates || '[]');
+        const occurrences = getQuinzenalOccurrences(s.billing_start_date, today.getFullYear(), today.getMonth());
+        occurrences.forEach(dateStr => {
+          if (!confirmedDates.includes(dateStr)) {
+            items.push({ ...s, _occurrence_date: dateStr });
+            if (s.type === 'income') income += amount;
+            else if (s.account_id) accountExpense += amount;
+          }
+        });
+        return;
+      }
+
+      // Monthly — existing logic
+      if (s.last_confirmed_month && s.last_confirmed_month.startsWith(ym.substring(0, 7))) return;
+      items.push(s);
       if (s.type === 'income') {
         income += amount;
       } else if (s.account_id) {
-        // expense paid via account → impacts end-of-month balance directly
         accountExpense += amount;
       }
-      // expense paid via card → already counted inside future invoice, skip
     });
 
-    // Sort by billing day
-    items.sort((a, b) => (a.billing_day || 0) - (b.billing_day || 0));
+    // Sort by billing day / occurrence date
+    items.sort((a, b) => {
+      const aKey = a._occurrence_date || `${String(a.billing_day || 0).padStart(2,'0')}`;
+      const bKey = b._occurrence_date || `${String(b.billing_day || 0).padStart(2,'0')}`;
+      return aKey.localeCompare(bKey);
+    });
 
     return { items, accountExpense, income };
   },
@@ -8347,7 +8427,7 @@ const Dashboard = {
       btn.addEventListener('click', () => {
         btn.disabled = true;
         btn.textContent = '✓';
-        confirmRecurrence(btn.dataset.confirmRec);
+        confirmRecurrence(btn.dataset.confirmRec, btn.dataset.confirmDate || null);
       });
     });
   },
@@ -8381,16 +8461,19 @@ const Dashboard = {
     const icon = isIncome ? '💰' : '🔁';
     const sign = isIncome ? '+' : '-';
     const amountClass = isIncome ? 'text-success' : 'text-danger';
+    const metaDate = s._occurrence_date
+      ? new Date(s._occurrence_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : `Day ${s.billing_day}`;
 
     return `
       <div class="upcoming-row">
         <div class="upcoming-icon">${icon}</div>
         <div class="upcoming-info">
           <div class="upcoming-name">${escapeHtml(s.name)}</div>
-          <div class="upcoming-meta">Day ${s.billing_day} · ${escapeHtml(sourceLabel)}</div>
+          <div class="upcoming-meta">${metaDate} · ${escapeHtml(sourceLabel)}</div>
         </div>
         <div class="upcoming-amount ${amountClass}">${sign}${App.formatCurrency(s.amount)}</div>
-        <button class="upcoming-confirm" data-confirm-rec="${s.id}">✓ Confirm</button>
+        <button class="upcoming-confirm" data-confirm-rec="${s.id}" data-confirm-date="${s._occurrence_date || ''}">✓ Confirm</button>
       </div>
     `;
   },
