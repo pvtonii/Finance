@@ -3215,7 +3215,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 47 · Jun 2, 2026</div>
+          <div class="app-version">Version 48 · Jun 2, 2026</div>
         </div>
       </div>
     </section>
@@ -8265,10 +8265,15 @@ const Dashboard = {
   render() {
     const today = this.calcTodayBalance();
 
-    // Sum of next unpaid invoice for each card (works for all closing/due day combos)
+    // Sum of next unpaid invoice for each card — only current calendar month (projection scope)
+    const nowRef = new Date();
+    const nowYear = nowRef.getFullYear(), nowMonth = nowRef.getMonth();
     const cardsDue = State.cards.reduce((sum, card) => {
       const m = Invoice.getNextUnpaidInvoice(card.id);
       if (!m) return sum;
+      const [y, mo] = m.split('-').map(Number);
+      const dueDate = new Date(y, mo - 1, Number(card.due_day));
+      if (dueDate.getFullYear() !== nowYear || dueDate.getMonth() !== nowMonth) return sum;
       return sum + Math.max(0, Invoice.getInvoiceTotal(card.id, m) - Invoice.getInvoicePaid(card.id, m));
     }, 0);
 
@@ -8348,15 +8353,18 @@ const Dashboard = {
     document.getElementById('dash-income').textContent = '+' + App.formatCurrency(monthStats.income);
     document.getElementById('dash-expense').textContent = '-' + App.formatCurrency(monthStats.expense);
 
-    // Cards with unpaid invoice due within the next 15 days
-    const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
+    // Cards due this month OR in the first 15 days of next month
+    const nextMonthRef = new Date(nowYear, nowMonth + 1, 1);
+    const nextYear = nextMonthRef.getFullYear(), nextMonth = nextMonthRef.getMonth();
     const pendingCards = State.cards.filter(c => {
       const m = Invoice.getNextUnpaidInvoice(c.id);
       if (!m) return false;
       const [y, mo] = m.split('-').map(Number);
       const dueDate = new Date(y, mo - 1, Number(c.due_day));
-      const days = Math.ceil((dueDate - todayMidnight) / 86400000);
-      return days >= 0 && days <= 15;
+      const dy = dueDate.getFullYear(), dm = dueDate.getMonth(), dd = dueDate.getDate();
+      if (dy === nowYear && dm === nowMonth) return true;
+      if (dy === nextYear && dm === nextMonth && dd <= 15) return true;
+      return false;
     });
     this.renderUpcoming(pendingRec.items, pendingCards);
 
@@ -8537,8 +8545,18 @@ const Dashboard = {
         </div>
         ${view === 'current' ? `
           ${!hasCurrent ? `<div style="font-size:0.8125rem;color:var(--text-tertiary);padding:var(--space-2) 0;">Nothing left this month. Check <strong>Past</strong> for missed items.</div>` : ''}
-          ${pendingCards.map(c => this.upcomingCardRow(c)).join('')}
-          ${items.map(s => this.upcomingRow(s)).join('')}
+          ${(() => {
+            const now2 = new Date();
+            const ym2 = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,'0')}`;
+            const lastDay2 = new Date(now2.getFullYear(), now2.getMonth()+1, 0).getDate();
+            const cardKey = c => { const m = Invoice.getNextUnpaidInvoice(c.id); if (!m) return '9999-99-99'; const [y,mo]=m.split('-').map(Number); const d=new Date(y,mo-1,Number(c.due_day)); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+            const subKey = s => s._occurrence_date || `${ym2}-${String(Math.min(Number(s.billing_day)||1,lastDay2)).padStart(2,'0')}`;
+            const all = [
+              ...pendingCards.map(c => ({ type:'card', data:c, k:cardKey(c) })),
+              ...items.map(s => ({ type:'sub', data:s, k:subKey(s) }))
+            ].sort((a,b) => a.k.localeCompare(b.k));
+            return all.map(r => r.type==='card' ? this.upcomingCardRow(r.data) : this.upcomingRow(r.data)).join('');
+          })()}
         ` : `
           ${pastItems.length === 0 ? `<div style="font-size:0.8125rem;color:var(--text-tertiary);padding:var(--space-2) 0;">All caught up — nothing unconfirmed last month.</div>` : ''}
           ${pastItems.map(s => this.upcomingPastRow(s)).join('')}
