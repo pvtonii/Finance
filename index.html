@@ -3203,7 +3203,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 40 · May 29, 2026</div>
+          <div class="app-version">Version 41 · May 29, 2026</div>
         </div>
       </div>
     </section>
@@ -8587,7 +8587,7 @@ badge.addEventListener('touchstart', startPress);
 badge.addEventListener('touchend', endPress);
 
 document.querySelectorAll('.nav-item').forEach(item => {
-  item.addEventListener('click', () => showPage(item.dataset.page));
+  item.addEventListener('click', () => { if (item.dataset.page) showPage(item.dataset.page); });
 });
 
 // FAB — toggle menu
