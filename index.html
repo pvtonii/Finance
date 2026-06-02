@@ -8572,7 +8572,7 @@ const Dashboard = {
     const source = isCard ? State.cards.find(c => c.id === s.card_id) : State.accounts.find(a => a.id === s.account_id);
     const sourceLabel = source ? (isCard ? '💳 ' : '🏦 ') + source.name : '— no source';
     const { parent: catParent, child: catChild } = categoryPath(s.category_id);
-    const icon = catChild?.icon || catParent?.icon || (isIncome ? '💰' : isCard ? '🔄' : '🔁');
+    const icon = isCard ? '🔄' : (catChild?.icon || catParent?.icon || (isIncome ? '💰' : '🔁'));
     const sign = isIncome ? '+' : '-';
     const amountClass = isIncome ? 'text-success' : 'text-danger';
     const dateLabel = new Date(s._past_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -8617,7 +8617,7 @@ const Dashboard = {
       : State.accounts.find(a => a.id === s.account_id);
     const sourceLabel = source ? (isCard ? '💳 ' : '🏦 ') + source.name : '— no source';
     const { parent: catParent, child: catChild } = categoryPath(s.category_id);
-    const icon = catChild?.icon || catParent?.icon || (isIncome ? '💰' : isCard ? '🔄' : '🔁');
+    const icon = isCard ? '🔄' : (catChild?.icon || catParent?.icon || (isIncome ? '💰' : '🔁'));
     const sign = isIncome ? '+' : '-';
     const amountClass = isIncome ? 'text-success' : 'text-danger';
     const metaDate = s._occurrence_date
