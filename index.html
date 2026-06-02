@@ -3203,7 +3203,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 41 · May 29, 2026</div>
+          <div class="app-version">Version 42 · May 29, 2026</div>
         </div>
       </div>
     </section>
@@ -4584,9 +4584,14 @@ async function enterApp() {
   const hasCached = Data.loadCache();
   const overlay = document.getElementById('app-loading-overlay');
 
+  // Restore page if we came from a refresh
+  const returnPage = sessionStorage.getItem('finance_return_page');
+  sessionStorage.removeItem('finance_return_page');
+
   if (hasCached) {
     // Show cached data immediately — no spinner
-    Dashboard.render();
+    if (returnPage) showPage(returnPage);
+    else Dashboard.render();
     // Then refresh silently in background
     const ok = await testConnection();
     if (ok) {
@@ -4604,7 +4609,8 @@ async function enterApp() {
       const ok = await testConnection();
       if (ok) {
         await Data.loadAll();
-        Dashboard.render();
+        if (returnPage) showPage(returnPage);
+        else Dashboard.render();
         setupRealtime();
       }
     } finally {
@@ -8493,22 +8499,19 @@ if (screen.orientation && typeof screen.orientation.lock === 'function') {
 }
 
 // Refresh button — forces reload bypassing cache
-document.getElementById('refresh-btn').addEventListener('click', async () => {
+document.getElementById('refresh-btn').addEventListener('click', () => {
   const btn = document.getElementById('refresh-btn');
   btn.style.transform = 'rotate(360deg)';
   btn.style.transition = 'transform 500ms ease';
-  setTimeout(() => { btn.style.transform = ''; btn.style.transition = ''; }, 600);
-
-  await Data.loadAll();
-
-  // Re-render whichever page is currently active
-  const pid = document.querySelector('.page.active')?.id;
-  if (pid === 'page-dashboard')         Dashboard.render();
-  else if (pid === 'page-transactions') Transactions.render();
-  else if (pid === 'page-cards')        Cards.render();
-  else if (pid === 'page-calendar')     Calendar.render?.();
-  else if (pid === 'page-insights')     Insights.render();
-  else if (pid === 'page-settings')     Settings.render();
+  // Save current page so we can restore it after reload
+  const pid = document.querySelector('.page.active')?.id?.replace('page-', '');
+  if (pid) sessionStorage.setItem('finance_return_page', pid);
+  // Hard reload with cache bust to pick up new app versions
+  setTimeout(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('t', Date.now());
+    window.location.href = url.toString();
+  }, 300);
 });
 
 // Search input — filters Activity in real time
