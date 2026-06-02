@@ -4750,13 +4750,14 @@ const Settings = {
     const { parent: catParent, child: catChild } = categoryPath(s.category_id);
     const catLabel = catChild?.name || catParent?.name || null;
     const catIcon = catChild?.icon || catParent?.icon || (s.type === 'income' ? '💰' : '🔁');
+    const rowIcon = s.card_id ? '🔄' : catIcon;
     const catColor = catParent?.color || null;
-    const iconStyle = catColor ? `background:${catColor}22;color:${catColor};` : '';
+    const iconStyle = catColor && !s.card_id ? `background:${catColor}22;color:${catColor};` : '';
     const inactive = !s.is_active ? ' style="opacity:0.5;"' : '';
 
     return `
       <div class="item-row" data-edit-subscription="${s.id}"${inactive}>
-        <div class="item-icon" style="${iconStyle}">${catIcon}</div>
+        <div class="item-icon" style="${iconStyle}">${rowIcon}</div>
         <div class="item-info">
           <div class="item-name">${escapeHtml(s.name)}</div>
           <div class="item-meta">
@@ -8280,7 +8281,7 @@ const Dashboard = {
     //   - pending account-based subscriptions (hit the account directly)
     //   + pending recurring income
     const liquidBalance = this.calcLiquidBalance();
-    const projected = liquidBalance - cardsDue - pendingRec.accountExpense + pendingRec.income;
+    const projected = liquidBalance - cardsDue - pendingRec.accountExpense - pendingRec.cardExpense + pendingRec.income;
 
     const monthStats = this.calcMonthStats();
 
@@ -8430,6 +8431,7 @@ const Dashboard = {
 
     const items = [];
     let accountExpense = 0;
+    let cardExpense = 0;
     let income = 0;
 
     State.subscriptions.forEach(s => {
@@ -8445,6 +8447,7 @@ const Dashboard = {
             items.push({ ...s, _occurrence_date: dateStr });
             if (s.type === 'income') income += amount;
             else if (s.account_id) accountExpense += amount;
+            else if (s.card_id) cardExpense += amount;
           }
         });
         return;
@@ -8457,6 +8460,8 @@ const Dashboard = {
         income += amount;
       } else if (s.account_id) {
         accountExpense += amount;
+      } else if (s.card_id) {
+        cardExpense += amount;
       }
     });
 
@@ -8467,7 +8472,7 @@ const Dashboard = {
       return aKey.localeCompare(bKey);
     });
 
-    return { items, accountExpense, income };
+    return { items, accountExpense, cardExpense, income };
   },
 
   calcRecurrencesPastDue() {
@@ -8566,7 +8571,8 @@ const Dashboard = {
     const isCard = !!s.card_id;
     const source = isCard ? State.cards.find(c => c.id === s.card_id) : State.accounts.find(a => a.id === s.account_id);
     const sourceLabel = source ? (isCard ? '💳 ' : '🏦 ') + source.name : '— no source';
-    const icon = isIncome ? '💰' : '🔁';
+    const { parent: catParent, child: catChild } = categoryPath(s.category_id);
+    const icon = catChild?.icon || catParent?.icon || (isIncome ? '💰' : isCard ? '🔄' : '🔁');
     const sign = isIncome ? '+' : '-';
     const amountClass = isIncome ? 'text-success' : 'text-danger';
     const dateLabel = new Date(s._past_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -8610,7 +8616,8 @@ const Dashboard = {
       ? State.cards.find(c => c.id === s.card_id)
       : State.accounts.find(a => a.id === s.account_id);
     const sourceLabel = source ? (isCard ? '💳 ' : '🏦 ') + source.name : '— no source';
-    const icon = isIncome ? '💰' : '🔁';
+    const { parent: catParent, child: catChild } = categoryPath(s.category_id);
+    const icon = catChild?.icon || catParent?.icon || (isIncome ? '💰' : isCard ? '🔄' : '🔁');
     const sign = isIncome ? '+' : '-';
     const amountClass = isIncome ? 'text-success' : 'text-danger';
     const metaDate = s._occurrence_date
