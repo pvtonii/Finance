@@ -3203,7 +3203,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 37 · May 29, 2026</div>
+          <div class="app-version">Version 38 · May 29, 2026</div>
         </div>
       </div>
     </section>
@@ -3426,6 +3426,46 @@ function initSupabaseClient() {
     Status.set('disconnected', 'Invalid URL or key');
     return false;
   }
+}
+
+function setupRealtime() {
+  if (!db) return;
+  if (window._financeChannel) { try { db.removeChannel(window._financeChannel); } catch(e) {} }
+
+  window._financeChannel = db.channel('finance-live')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' },  handleRemoteChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions' }, handleRemoteChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' },      handleRemoteChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'cards' },         handleRemoteChange)
+    .subscribe();
+}
+
+async function handleRemoteChange(payload) {
+  const myId = Auth.getSession()?.userId;
+  // Skip changes we created ourselves — already in State
+  if (payload.new?.created_by === myId) return;
+
+  const table = payload.table;
+  if (table === 'transactions') {
+    const { data } = await db.from('transactions').select('*').order('date', { ascending: false }).order('created_at', { ascending: false });
+    if (data) { State.transactions = data; Data.saveCache(); }
+  } else if (table === 'subscriptions') {
+    const { data } = await db.from('subscriptions').select('*').order('billing_day');
+    if (data) { State.subscriptions = data; Data.saveCache(); }
+  } else if (table === 'accounts') {
+    const { data } = await db.from('accounts').select('*').order('name');
+    if (data) { State.accounts = data; Data.saveCache(); }
+  } else if (table === 'cards') {
+    const { data } = await db.from('cards').select('*').order('name');
+    if (data) { State.cards = data; Data.saveCache(); }
+  }
+
+  const pid = document.querySelector('.page.active')?.id;
+  if (pid === 'page-dashboard')         Dashboard.render();
+  else if (pid === 'page-transactions') Transactions.render();
+  else if (pid === 'page-cards')        Cards.render();
+  else if (pid === 'page-calendar')     Calendar.render?.();
+  else if (pid === 'page-insights')     Insights.render();
 }
 
 async function testConnection() {
@@ -4391,10 +4431,12 @@ const Modal = {
     document.getElementById('modal-body').innerHTML = bodyHtml;
     document.getElementById('modal-overlay').classList.add('active');
     document.getElementById('modal').classList.add('active');
+    document.body.style.overflow = 'hidden';
   },
   close() {
     document.getElementById('modal-overlay').classList.remove('active');
     document.getElementById('modal').classList.remove('active');
+    document.body.style.overflow = '';
   },
 };
 document.getElementById('modal-overlay').addEventListener('click', () => Modal.close());
@@ -4441,6 +4483,8 @@ function showPage(name) {
   if (name === 'cards') {
     Cards.view = 'list';
     Cards.selectedCardId = null;
+    Cards.selectedInvoiceMonth = null;
+    Cards.filterOwner = Auth.getSession()?.userId || 'all';
     Cards.render();
   }
   if (name === 'calendar') Calendar.render();
@@ -4552,6 +4596,7 @@ async function enterApp() {
       if (document.getElementById('page-cards').classList.contains('active')) Cards.render();
       if (document.getElementById('page-insights').classList.contains('active')) Insights.render();
     }
+    setupRealtime();
   } else {
     // First load — show spinner until data arrives
     if (overlay) overlay.style.display = 'flex';
@@ -4560,6 +4605,7 @@ async function enterApp() {
       if (ok) {
         await Data.loadAll();
         Dashboard.render();
+        setupRealtime();
       }
     } finally {
       if (overlay) overlay.style.display = 'none';
