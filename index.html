@@ -843,19 +843,23 @@ h1, h2, h3 {
   letter-spacing: -0.02em;
 }
 .modal-close {
-  width: 32px; height: 32px;
+  width: 44px; height: 44px;
   border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
-  transition: all var(--duration);
-}
-.modal-close:hover {
   background: var(--bg-tertiary);
-  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  transition: all var(--duration);
+  flex-shrink: 0;
 }
-.modal-close svg { width: 18px; height: 18px; }
+.modal-close:hover, .modal-close:active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+.modal-close svg { width: 20px; height: 20px; }
 
 .modal-body {
   padding: var(--space-3) var(--space-5) var(--space-5);
@@ -3204,7 +3208,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 43 · Jun 2, 2026</div>
+          <div class="app-version">Version 44 · Jun 2, 2026</div>
         </div>
       </div>
     </section>
@@ -3412,10 +3416,10 @@ function getQuinzenalOccurrences(startDateStr, year, month) {
   const monthEnd = new Date(year, month + 1, 0);
   const dates = [];
   let cur = new Date(start);
-  while (cur < monthStart) cur = new Date(cur.getTime() + 15 * 86400000);
+  while (cur < monthStart) cur = new Date(cur.getTime() + 14 * 86400000);
   while (cur <= monthEnd) {
     dates.push(cur.toISOString().split('T')[0]);
-    cur = new Date(cur.getTime() + 15 * 86400000);
+    cur = new Date(cur.getTime() + 14 * 86400000);
   }
   return dates;
 }
@@ -4441,21 +4445,24 @@ function toast(msg, type = 'success', action = null) {
    MODAL
    ============================================ */
 const Modal = {
+  _touchBlock: null,
   open(title, bodyHtml) {
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = bodyHtml;
     document.getElementById('modal-overlay').classList.add('active');
     document.getElementById('modal').classList.add('active');
-    // iOS PWA scroll lock: position:fixed prevents background scroll on iOS
-    const scrollY = window.scrollY;
-    document.body.style.cssText = `overflow:hidden;position:fixed;top:-${scrollY}px;width:100%;`;
+    document.body.style.overflow = 'hidden';
+    // iOS: block touchmove on overlay to prevent background scroll
+    const overlay = document.getElementById('modal-overlay');
+    this._touchBlock = e => e.preventDefault();
+    overlay.addEventListener('touchmove', this._touchBlock, { passive: false });
   },
   close() {
     document.getElementById('modal-overlay').classList.remove('active');
     document.getElementById('modal').classList.remove('active');
-    const scrollY = Math.abs(parseInt(document.body.style.top || '0'));
-    document.body.style.cssText = '';
-    window.scrollTo(0, scrollY);
+    document.body.style.overflow = '';
+    const overlay = document.getElementById('modal-overlay');
+    if (this._touchBlock) { overlay.removeEventListener('touchmove', this._touchBlock); this._touchBlock = null; }
   },
 };
 document.getElementById('modal-overlay').addEventListener('click', () => Modal.close());
@@ -7706,19 +7713,23 @@ const Calendar = {
 
     // 2. Subscriptions / Recurring (expense + income)
     State.subscriptions.filter(s => s.is_active !== false).forEach(s => {
+      const isIncome = s.type === 'income';
+      const isCardSub = !!s.card_id;
+      const eventColor = isIncome ? 'income' : (isCardSub ? 'subscription' : 'expense');
+
+      if (s.billing_frequency === 'quinzenal' && s.billing_start_date) {
+        // Show all 14-day occurrences in this month
+        getQuinzenalOccurrences(s.billing_start_date, year, month).forEach(dateStr => {
+          addEvent(dateStr, { type: eventColor, title: s.name, amount: Number(s.amount) || 0, color: eventColor, ownerAvatar: s.owner });
+        });
+        return;
+      }
+
       const day = Number(s.billing_day);
       if (!day) return;
       const d = Math.min(day, this.daysInMonth(year, month));
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const isIncome = s.type === 'income';
-      const isCardSub = !!s.card_id;
-      addEvent(dateStr, {
-        type: isIncome ? 'income' : (isCardSub ? 'subscription' : 'expense'),
-        title: s.name,
-        amount: Number(s.amount) || 0,
-        color: isIncome ? 'income' : (isCardSub ? 'subscription' : 'expense'),
-        ownerAvatar: s.owner,
-      });
+      addEvent(dateStr, { type: eventColor, title: s.name, amount: Number(s.amount) || 0, color: eventColor, ownerAvatar: s.owner });
     });
 
     return events;
@@ -8464,12 +8475,13 @@ const Dashboard = {
     const metaDate = s._occurrence_date
       ? new Date(s._occurrence_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       : `Day ${s.billing_day}`;
+    const biweeklyBadge = s._occurrence_date ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;margin-left:4px;">↻ biweekly</span>` : '';
 
     return `
       <div class="upcoming-row">
         <div class="upcoming-icon">${icon}</div>
         <div class="upcoming-info">
-          <div class="upcoming-name">${escapeHtml(s.name)}</div>
+          <div class="upcoming-name">${escapeHtml(s.name)}${biweeklyBadge}</div>
           <div class="upcoming-meta">${metaDate} · ${escapeHtml(sourceLabel)}</div>
         </div>
         <div class="upcoming-amount ${amountClass}">${sign}${App.formatCurrency(s.amount)}</div>
