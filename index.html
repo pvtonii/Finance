@@ -3215,7 +3215,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 46 · Jun 2, 2026</div>
+          <div class="app-version">Version 47 · Jun 2, 2026</div>
         </div>
       </div>
     </section>
@@ -8050,7 +8050,7 @@ const Cards = {
               ${formingLine}
             </div>
             <div style="text-align:right;flex-shrink:0;">
-              <div class="card-item-amount ${nextUnpaidAmount > 0 ? 'text-danger' : ''}">${App.formatCurrency(nextUnpaidAmount)}</div>
+              <div class="card-item-amount" style="${nextUnpaidAmount > 0 ? (openMonth === nextUnpaidMonth ? 'color:var(--warning)' : 'color:var(--danger)') : ''}">${App.formatCurrency(nextUnpaidAmount)}</div>
               <div class="card-item-amount-label">${nextUnpaidAmount > 0 ? 'due ' + dueDateLabel : 'no bill'}</div>
             </div>
           </div>
