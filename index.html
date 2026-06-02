@@ -3203,7 +3203,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 38 · May 29, 2026</div>
+          <div class="app-version">Version 40 · May 29, 2026</div>
         </div>
       </div>
     </section>
@@ -8493,16 +8493,22 @@ if (screen.orientation && typeof screen.orientation.lock === 'function') {
 }
 
 // Refresh button — forces reload bypassing cache
-document.getElementById('refresh-btn').addEventListener('click', () => {
+document.getElementById('refresh-btn').addEventListener('click', async () => {
   const btn = document.getElementById('refresh-btn');
   btn.style.transform = 'rotate(360deg)';
   btn.style.transition = 'transform 500ms ease';
-  // Append timestamp query param to bust cache, then reload
-  setTimeout(() => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('t', Date.now());
-    window.location.href = url.toString();
-  }, 300);
+  setTimeout(() => { btn.style.transform = ''; btn.style.transition = ''; }, 600);
+
+  await Data.loadAll();
+
+  // Re-render whichever page is currently active
+  const pid = document.querySelector('.page.active')?.id;
+  if (pid === 'page-dashboard')         Dashboard.render();
+  else if (pid === 'page-transactions') Transactions.render();
+  else if (pid === 'page-cards')        Cards.render();
+  else if (pid === 'page-calendar')     Calendar.render?.();
+  else if (pid === 'page-insights')     Insights.render();
+  else if (pid === 'page-settings')     Settings.render();
 });
 
 // Search input — filters Activity in real time
@@ -8557,6 +8563,7 @@ function closeMoreDrawer() {
 }
 if (moreBtn) moreBtn.addEventListener('click', openMoreDrawer);
 if (moreOverlay) moreOverlay.addEventListener('click', closeMoreDrawer);
+if (moreDrawer) moreDrawer.addEventListener('click', e => { if (!e.target.closest('.more-option')) closeMoreDrawer(); });
 document.querySelectorAll('[data-more-go]').forEach(btn => {
   btn.addEventListener('click', () => {
     const target = btn.dataset.moreGo;
