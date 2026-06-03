@@ -2896,9 +2896,12 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
 }
 .toast-action {
   font-weight: 600;
-  color: var(--info);
-  text-decoration: underline;
-  margin-left: var(--space-2);
+  color: white;
+  background: var(--info);
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  margin-left: var(--space-3);
+  white-space: nowrap;
 }
 
 /* Botão "Move to other invoice" no modal de edição */
@@ -3215,7 +3218,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 53 · Jun 3, 2026</div>
+          <div class="app-version">Version 54 · Jun 3, 2026</div>
         </div>
       </div>
     </section>
@@ -3475,9 +3478,11 @@ function handleRemoteChange(payload) {
   const evt = payload.eventType; // 'INSERT' | 'UPDATE' | 'DELETE'
 
   function applyChange(arr, newRow, oldRow) {
-    if (evt === 'INSERT' && newRow) return [...arr, newRow];
-    if (evt === 'UPDATE' && newRow?.id) return arr.map(r => r.id === newRow.id ? newRow : r);
-    if (evt === 'DELETE' && oldRow?.id) return arr.filter(r => r.id !== oldRow.id);
+    const n = newRow ? { ...newRow } : null;
+    const o = oldRow ? { ...oldRow } : null;
+    if (evt === 'INSERT' && n) return [...arr, n];
+    if (evt === 'UPDATE' && n?.id) return arr.map(r => r.id === n.id ? n : r);
+    if (evt === 'DELETE' && o?.id) return arr.filter(r => r.id !== o.id);
     return arr;
   }
 
@@ -8568,8 +8573,10 @@ const Dashboard = {
         });
         return;
       }
-      // Monthly: not confirmed in previous month
-      if (!s.last_confirmed_month || !s.last_confirmed_month.startsWith(prevYM)) {
+      // Monthly: show in past only if last_confirmed_month is before the previous month
+      // (confirmed for current month or later = already handled, don't show in past)
+      const prevMonthStart = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-01`;
+      if (!s.last_confirmed_month || s.last_confirmed_month < prevMonthStart) {
         const lastDay = new Date(prevYear, prevMonth + 1, 0).getDate();
         const day = Math.min(Number(s.billing_day) || 1, lastDay);
         const dateStr = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
