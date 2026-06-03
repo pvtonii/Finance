@@ -3222,7 +3222,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 55 · Jun 3, 2026</div>
+          <div class="app-version">Version 56 · Jun 3, 2026</div>
         </div>
       </div>
     </section>
@@ -8456,6 +8456,7 @@ const Dashboard = {
     const nowRef = new Date();
     const nowYear = nowRef.getFullYear(), nowMonth = nowRef.getMonth();
     const monthName = nowRef.toLocaleString('en-US', { month: 'long' });
+    const ym = `${nowYear}-${String(nowMonth + 1).padStart(2, '0')}`;
 
     const liquidBalance = this.calcLiquidBalance();
     const pendingRec = this.calcRecurrencesPending();
@@ -8475,32 +8476,58 @@ const Dashboard = {
 
     const projected = liquidBalance - cardsDue - pendingRec.accountExpense - pendingRec.cardExpense + pendingRec.income;
 
-    const pendingBills = pendingRec.items.filter(s => s.type === 'expense' && s.account_id);
-    const pendingSubs = pendingRec.items.filter(s => s.type === 'expense' && s.card_id);
-    const pendingIncome = pendingRec.items.filter(s => s.type === 'income');
+    // Handled this month (confirmed or skipped) — shown strikethrough
+    const pendingIds = new Set(pendingRec.items.map(s => s.id));
+    const handledThisMonth = State.subscriptions.filter(s => {
+      if (!s.is_active || pendingIds.has(s.id)) return false;
+      if (s.billing_frequency === 'quinzenal' && s.billing_start_date) {
+        const confirmed = JSON.parse(s.confirmed_dates || '[]');
+        return getQuinzenalOccurrences(s.billing_start_date, nowYear, nowMonth).some(d => confirmed.includes(d));
+      }
+      return s.last_confirmed_month?.startsWith(ym);
+    });
 
-    const row = (label, amount, cls, sub = '') => `
+    const pendingBills   = pendingRec.items.filter(s => s.type === 'expense' && s.account_id);
+    const pendingSubs    = pendingRec.items.filter(s => s.type === 'expense' && s.card_id);
+    const pendingIncome  = pendingRec.items.filter(s => s.type === 'income');
+    const handledBills   = handledThisMonth.filter(s => s.type === 'expense' && s.account_id);
+    const handledSubs    = handledThisMonth.filter(s => s.type === 'expense' && s.card_id);
+    const handledIncome  = handledThisMonth.filter(s => s.type === 'income');
+
+    const sectionRow = (label, amount, cls, sub = '') => `
       <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border-subtle);">
         <span style="color:var(--text-secondary);font-size:0.875rem;">${label}${sub ? `<span style="font-size:0.75rem;color:var(--text-tertiary);margin-left:4px;">${sub}</span>` : ''}</span>
         <span class="text-mono ${cls}" style="font-size:0.875rem;font-weight:600;">${amount}</span>
       </div>`;
 
-    const subRows = (items, sign, cls) => items.map(s =>
+    const itemRow = (name, amt, sign, cls) =>
       `<div style="display:flex;justify-content:space-between;padding:3px 0 3px 12px;">
-        <span style="color:var(--text-tertiary);font-size:0.8125rem;">${escapeHtml(s.name)}</span>
-        <span class="text-mono ${cls}" style="font-size:0.8125rem;">${sign}${App.formatCurrency(s.amount)}</span>
-      </div>`
-    ).join('');
+        <span style="color:var(--text-tertiary);font-size:0.8125rem;">${escapeHtml(name)}</span>
+        <span class="text-mono ${cls}" style="font-size:0.8125rem;">${sign}${App.formatCurrency(amt)}</span>
+      </div>`;
+
+    const skippedRow = (name, amt, sign) =>
+      `<div style="display:flex;justify-content:space-between;padding:3px 0 3px 12px;opacity:0.4;">
+        <span style="font-size:0.8125rem;text-decoration:line-through;color:var(--text-tertiary);">${escapeHtml(name)}</span>
+        <span class="text-mono" style="font-size:0.8125rem;text-decoration:line-through;color:var(--text-tertiary);">${sign}${App.formatCurrency(amt)}</span>
+      </div>`;
+
+    const section = (label, pending, handled, sign, cls, total) => {
+      if (!pending.length && !handled.length) return '';
+      return sectionRow(label, (sign === '+' ? '+' : '-') + App.formatCurrency(total), cls)
+        + pending.map(s => itemRow(s.name, s.amount, sign, cls)).join('')
+        + handled.map(s => skippedRow(s.name, s.amount, sign)).join('');
+    };
 
     const divider = `<div style="border-top:2px solid var(--border);margin:10px 0;"></div>`;
 
     const body = `
       <div style="padding-bottom:var(--space-2);">
-        ${row('Checking balance', App.formatCurrency(liquidBalance), liquidBalance >= 0 ? 'text-success' : 'text-danger')}
-        ${cardsDueItems.length ? row(`Cards due (${monthName})`, '-' + App.formatCurrency(cardsDue), 'text-danger') + subRows(cardsDueItems, '-', 'text-danger') : ''}
-        ${pendingBills.length ? row('Pending bills', '-' + App.formatCurrency(pendingRec.accountExpense), 'text-danger') + subRows(pendingBills, '-', 'text-danger') : ''}
-        ${pendingSubs.length ? row('Pending subscriptions', '-' + App.formatCurrency(pendingRec.cardExpense), 'text-danger') + subRows(pendingSubs, '-', 'text-danger') : ''}
-        ${pendingIncome.length ? row('Pending income', '+' + App.formatCurrency(pendingRec.income), 'text-success') + subRows(pendingIncome, '+', 'text-success') : ''}
+        ${sectionRow('Checking balance', App.formatCurrency(liquidBalance), liquidBalance >= 0 ? 'text-success' : 'text-danger')}
+        ${cardsDueItems.length ? sectionRow(`Cards due (${monthName})`, '-' + App.formatCurrency(cardsDue), 'text-danger') + cardsDueItems.map(c => itemRow(c.name, c.amount, '-', 'text-danger')).join('') : ''}
+        ${section('Bills', pendingBills, handledBills, '-', 'text-danger', pendingRec.accountExpense)}
+        ${section('Subscriptions', pendingSubs, handledSubs, '-', 'text-danger', pendingRec.cardExpense)}
+        ${section('Income', pendingIncome, handledIncome, '+', 'text-success', pendingRec.income)}
         ${divider}
         <div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;">
           <span style="font-weight:600;">End of month</span>
