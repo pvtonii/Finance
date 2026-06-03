@@ -3222,7 +3222,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 59 · Jun 3, 2026</div>
+          <div class="app-version">Version 60 · Jun 3, 2026</div>
         </div>
       </div>
     </section>
@@ -5906,10 +5906,13 @@ function openTransactionForm(transaction = null) {
   };
 
   // Detect installment group edit (parent of a group)
-  const isInstallmentGroup = isEdit && t.installment_group_id && t.installments_total > 1;
+  const isInstallmentGroup = isEdit && t.installments_total > 1 && !!t.installment_group_id;
   const installmentGroupMembers = isInstallmentGroup
     ? State.transactions.filter(x => x.installment_group_id === t.installment_group_id)
     : [];
+  const installmentGroupTotal = isInstallmentGroup
+    ? installmentGroupMembers.reduce((s, x) => s + (Number(x.amount) || 0), 0)
+    : null;
 
   // Source: 'account' ou 'card'
   const initialSource = t.card_id ? 'card' : (isEdit ? 'account' : 'card');
@@ -5919,7 +5922,7 @@ function openTransactionForm(transaction = null) {
     : (isEdit ? 'Edit transaction' : 'New transaction');
 
   const groupWarningHtml = isInstallmentGroup
-    ? `<div style="font-size:0.8125rem;color:var(--warning);background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.2);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);margin-bottom:var(--space-3);">Changes to description, category and owner apply to all ${t.installments_total} installments.</div>`
+    ? `<div style="font-size:0.8125rem;color:var(--warning);background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.2);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);margin-bottom:var(--space-3);">Total across ${t.installments_total} installments · changing amount or count recreates all installments.</div>`
     : '';
 
   Modal.open(modalTitle, `
@@ -5932,8 +5935,7 @@ function openTransactionForm(transaction = null) {
 
     <!-- Valor -->
     <input class="amount-input" id="tx-amount" type="text" inputmode="decimal" placeholder="$0.00"
-           value="${t.amount ? formatAmountInput(t.amount) : ''}" autocomplete="off"
-           ${isInstallmentGroup ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}>
+           value="${isInstallmentGroup ? formatAmountInput(installmentGroupTotal) : (t.amount ? formatAmountInput(t.amount) : '')}" autocomplete="off">
 
     <!-- Descrição (em cima pra você sempre saber onde gastou) -->
     <div class="form-field">
@@ -6525,17 +6527,45 @@ function openTransactionForm(transaction = null) {
 
       if (isEdit) {
         if (isInstallmentGroup) {
-          // Propagate shared fields to ALL installments — keep each one's amount/date/invoice_month/installment fields intact
-          const sharedData = {
-            type: baseData.type,
-            description: baseData.description,
-            category_id: baseData.category_id,
-            owner: baseData.owner,
-            created_by: baseData.created_by,
-            tags: baseData.tags,
-          };
-          await Promise.all(installmentGroupMembers.map(m => Data.updateTransaction(m.id, sharedData)));
-          toast(`${installmentGroupMembers.length} installments updated`);
+          const amountChanged = Math.abs(amount - installmentGroupTotal) > 0.001;
+          const countChanged = installments !== installmentGroupMembers.length;
+          if (amountChanged || countChanged) {
+            // Delete old group and recreate with new amount/count
+            const card = State.cards.find(c => c.id === installmentGroupMembers[0].card_id);
+            const originalDate = installmentGroupMembers[0].date;
+            for (const m of installmentGroupMembers) await Data.deleteTransaction(m.id);
+            const newGroupId = crypto.randomUUID();
+            const firstInvoice = Invoice.computeMonthString(originalDate, card);
+            const eachAmount = Math.round((amount / installments) * 100) / 100;
+            const lastAmount = Math.round((amount - eachAmount * (installments - 1)) * 100) / 100;
+            const rows = [];
+            for (let i = 0; i < installments; i++) {
+              rows.push({
+                ...baseData,
+                amount: i === installments - 1 ? lastAmount : eachAmount,
+                date: originalDate,
+                account_id: null,
+                card_id: installmentGroupMembers[0].card_id,
+                installments_total: installments,
+                installment_number: i + 1,
+                installment_group_id: newGroupId,
+                invoice_month: Invoice.addMonths(firstInvoice, i),
+              });
+            }
+            await Data.createTransactionsBatch(rows);
+            toast(`${installments} installments updated`);
+          } else {
+            // Only meta changed — propagate without recreating
+            const sharedData = {
+              description: baseData.description,
+              category_id: baseData.category_id,
+              owner: baseData.owner,
+              created_by: baseData.created_by,
+              tags: baseData.tags,
+            };
+            await Promise.all(installmentGroupMembers.map(m => Data.updateTransaction(m.id, sharedData)));
+            toast(`${installmentGroupMembers.length} installments updated`);
+          }
         } else {
           // Normal single transaction edit
           const data = {
@@ -9150,10 +9180,11 @@ document.addEventListener('click', (e) => {
     let t = State.transactions.find(x => x.id === id);
     if (t) {
       // Child installment → redirect to parent silently
-      if (t.installment_group_id && t.installment_number > 1) {
-        const parent = State.transactions.find(x =>
-          x.installment_group_id === t.installment_group_id && x.installment_number === 1
-        );
+      const isChild = t.installment_number > 1 && t.installments_total > 1;
+      if (isChild) {
+        const parent = t.installment_group_id
+          ? State.transactions.find(x => x.installment_group_id === t.installment_group_id && x.installment_number === 1)
+          : null;
         if (parent) t = parent;
         else { toast('Original installment not found', 'error'); return; }
       }
