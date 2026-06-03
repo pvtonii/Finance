@@ -3215,7 +3215,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 50 · Jun 3, 2026</div>
+          <div class="app-version">Version 51 · Jun 3, 2026</div>
         </div>
       </div>
     </section>
@@ -3466,25 +3466,31 @@ function setupRealtime() {
     .subscribe();
 }
 
-async function handleRemoteChange(payload) {
+function handleRemoteChange(payload) {
   const myId = Auth.getSession()?.userId;
   // Skip changes we created ourselves — already in State
   if (payload.new?.created_by === myId) return;
 
   const table = payload.table;
-  if (table === 'transactions') {
-    const { data } = await db.from('transactions').select('*').order('date', { ascending: false }).order('created_at', { ascending: false });
-    if (data) { State.transactions = data; Data.saveCache(); }
-  } else if (table === 'subscriptions') {
-    const { data } = await db.from('subscriptions').select('*').order('billing_day');
-    if (data) { State.subscriptions = data; Data.saveCache(); }
-  } else if (table === 'accounts') {
-    const { data } = await db.from('accounts').select('*').order('name');
-    if (data) { State.accounts = data; Data.saveCache(); }
-  } else if (table === 'cards') {
-    const { data } = await db.from('cards').select('*').order('name');
-    if (data) { State.cards = data; Data.saveCache(); }
+  const evt = payload.eventType; // 'INSERT' | 'UPDATE' | 'DELETE'
+
+  function applyChange(arr, newRow, oldRow) {
+    if (evt === 'INSERT') return [...arr, newRow];
+    if (evt === 'UPDATE') return arr.map(r => r.id === newRow.id ? newRow : r);
+    if (evt === 'DELETE') return arr.filter(r => r.id !== oldRow.id);
+    return arr;
   }
+
+  if (table === 'transactions') {
+    State.transactions = applyChange(State.transactions, payload.new, payload.old);
+  } else if (table === 'subscriptions') {
+    State.subscriptions = applyChange(State.subscriptions, payload.new, payload.old);
+  } else if (table === 'accounts') {
+    State.accounts = applyChange(State.accounts, payload.new, payload.old);
+  } else if (table === 'cards') {
+    State.cards = applyChange(State.cards, payload.new, payload.old);
+  }
+  Data.saveCache();
 
   const pid = document.querySelector('.page.active')?.id;
   if (pid === 'page-dashboard')         Dashboard.render();
@@ -3492,6 +3498,7 @@ async function handleRemoteChange(payload) {
   else if (pid === 'page-cards')        Cards.render();
   else if (pid === 'page-calendar')     Calendar.render?.();
   else if (pid === 'page-insights')     Insights.render();
+  else if (pid === 'page-settings')     Settings.render();
 }
 
 async function testConnection() {
