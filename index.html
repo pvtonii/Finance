@@ -3215,7 +3215,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 51 · Jun 3, 2026</div>
+          <div class="app-version">Version 52 · Jun 3, 2026</div>
         </div>
       </div>
     </section>
@@ -8591,6 +8591,9 @@ const Dashboard = {
 
     // Nothing anywhere → hide the whole card (and reset to current view)
     if (!hasCurrent && !hasPast) { container.innerHTML = ''; this.upcomingView = 'current'; return; }
+
+    // If past is now empty and we're still on past view, snap back to current
+    if (!hasPast && view === 'past') { this.upcomingView = 'current'; view = 'current'; }
 
     // Only show the Past tab when there's actually something past
     const toggle = hasPast ? `
