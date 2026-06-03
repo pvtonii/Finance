@@ -3215,7 +3215,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 52 · Jun 3, 2026</div>
+          <div class="app-version">Version 53 · Jun 3, 2026</div>
         </div>
       </div>
     </section>
@@ -3475,9 +3475,9 @@ function handleRemoteChange(payload) {
   const evt = payload.eventType; // 'INSERT' | 'UPDATE' | 'DELETE'
 
   function applyChange(arr, newRow, oldRow) {
-    if (evt === 'INSERT') return [...arr, newRow];
-    if (evt === 'UPDATE') return arr.map(r => r.id === newRow.id ? newRow : r);
-    if (evt === 'DELETE') return arr.filter(r => r.id !== oldRow.id);
+    if (evt === 'INSERT' && newRow) return [...arr, newRow];
+    if (evt === 'UPDATE' && newRow?.id) return arr.map(r => r.id === newRow.id ? newRow : r);
+    if (evt === 'DELETE' && oldRow?.id) return arr.filter(r => r.id !== oldRow.id);
     return arr;
   }
 
@@ -3865,6 +3865,7 @@ const Data = {
     Status.set('syncing', 'Updating…');
     const { data: row, error } = await db.from('subscriptions').update(data).eq('id', id).select().single();
     if (error) { Status.set('disconnected', 'Update failed'); throw error; }
+    if (!row) throw new Error('Subscription not found');
     const idx = State.subscriptions.findIndex(s => s.id === id);
     if (idx >= 0) State.subscriptions[idx] = row;
     this._setReady();
