@@ -3222,7 +3222,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 60 · Jun 3, 2026</div>
+          <div class="app-version">Version 62 · Jun 3, 2026</div>
         </div>
       </div>
     </section>
@@ -6665,18 +6665,13 @@ function openTransactionForm(transaction = null) {
     });
 
     document.getElementById('tx-delete').addEventListener('click', async () => {
-      // Se for parcela, perguntar se exclui só ela ou o grupo todo
+      // Installment group → delete all without asking
       if (transaction.installment_group_id && transaction.installments_total > 1) {
-        const choice = confirm(`This is installment ${transaction.installment_number}/${transaction.installments_total}. Click OK to delete ALL installments, or Cancel to delete only this one.`);
+        const all = State.transactions.filter(x => x.installment_group_id === transaction.installment_group_id);
+        if (!confirm(`Delete all ${all.length} installments? This cannot be undone.`)) return;
         try {
-          if (choice) {
-            const all = State.transactions.filter(x => x.installment_group_id === transaction.installment_group_id);
-            for (const r of all) await Data.deleteTransaction(r.id);
-            toast(`${all.length} installments deleted`);
-          } else {
-            await Data.deleteTransaction(transaction.id);
-            toast('Installment deleted');
-          }
+          for (const r of all) await Data.deleteTransaction(r.id);
+          toast(`${all.length} installments deleted`);
           Modal.close();
           Transactions.render();
           Dashboard.render();
@@ -9179,14 +9174,13 @@ document.addEventListener('click', (e) => {
     const id = editTx.dataset.editTx;
     let t = State.transactions.find(x => x.id === id);
     if (t) {
-      // Child installment → redirect to parent silently
-      const isChild = t.installment_number > 1 && t.installments_total > 1;
-      if (isChild) {
-        const parent = t.installment_group_id
-          ? State.transactions.find(x => x.installment_group_id === t.installment_group_id && x.installment_number === 1)
-          : null;
+      // Child installment → redirect to parent silently (only when group_id exists and parent is found)
+      if (t.installment_number > 1 && t.installments_total > 1 && t.installment_group_id) {
+        const parent = State.transactions.find(x =>
+          x.installment_group_id === t.installment_group_id && x.installment_number === 1
+        );
         if (parent) t = parent;
-        else { toast('Original installment not found', 'error'); return; }
+        // If parent not found (edge case / legacy data), fall through and open as-is
       }
       openTransactionForm(t);
     }
