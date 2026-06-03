@@ -3050,10 +3050,10 @@ html { scroll-behavior: smooth; }
           <div class="dash-card-value text-mono text-danger" id="dash-due-value">-$0.00</div>
           <div class="dash-card-sub" id="dash-due-sub">bills + subscriptions</div>
         </div>
-        <div class="dash-card highlight fade-in" id="dash-projected">
+        <div class="dash-card highlight fade-in" id="dash-projected" style="cursor:pointer;" title="Tap for breakdown">
           <div class="dash-card-label">End of month</div>
           <div class="dash-card-value text-mono" id="dash-projected-value">$0.00</div>
-          <div class="dash-card-sub" id="dash-projected-sub">projected</div>
+          <div class="dash-card-sub" id="dash-projected-sub">projected · tap for details</div>
         </div>
       </div>
 
@@ -3215,7 +3215,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 48 · Jun 2, 2026</div>
+          <div class="app-version">Version 49 · Jun 2, 2026</div>
         </div>
       </div>
     </section>
@@ -8432,6 +8432,65 @@ const Dashboard = {
     });
   },
 
+  showProjectedBreakdown() {
+    const nowRef = new Date();
+    const nowYear = nowRef.getFullYear(), nowMonth = nowRef.getMonth();
+    const monthName = nowRef.toLocaleString('en-US', { month: 'long' });
+
+    const liquidBalance = this.calcLiquidBalance();
+    const pendingRec = this.calcRecurrencesPending();
+
+    // Cards due this calendar month only
+    const cardsDueItems = State.cards.map(card => {
+      const m = Invoice.getNextUnpaidInvoice(card.id);
+      if (!m) return null;
+      const [y, mo] = m.split('-').map(Number);
+      const dueDate = new Date(y, mo - 1, Number(card.due_day));
+      if (dueDate.getFullYear() !== nowYear || dueDate.getMonth() !== nowMonth) return null;
+      const amount = Math.max(0, Invoice.getInvoiceTotal(card.id, m) - Invoice.getInvoicePaid(card.id, m));
+      if (amount === 0) return null;
+      return { name: card.name, amount };
+    }).filter(Boolean);
+    const cardsDue = cardsDueItems.reduce((s, x) => s + x.amount, 0);
+
+    const projected = liquidBalance - cardsDue - pendingRec.accountExpense - pendingRec.cardExpense + pendingRec.income;
+
+    const pendingBills = pendingRec.items.filter(s => s.type === 'expense' && s.account_id);
+    const pendingSubs = pendingRec.items.filter(s => s.type === 'expense' && s.card_id);
+    const pendingIncome = pendingRec.items.filter(s => s.type === 'income');
+
+    const row = (label, amount, cls, sub = '') => `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border-subtle);">
+        <span style="color:var(--text-secondary);font-size:0.875rem;">${label}${sub ? `<span style="font-size:0.75rem;color:var(--text-tertiary);margin-left:4px;">${sub}</span>` : ''}</span>
+        <span class="text-mono ${cls}" style="font-size:0.875rem;font-weight:600;">${amount}</span>
+      </div>`;
+
+    const subRows = (items, sign, cls) => items.map(s =>
+      `<div style="display:flex;justify-content:space-between;padding:3px 0 3px 12px;">
+        <span style="color:var(--text-tertiary);font-size:0.8125rem;">${escapeHtml(s.name)}</span>
+        <span class="text-mono ${cls}" style="font-size:0.8125rem;">${sign}${App.formatCurrency(s.amount)}</span>
+      </div>`
+    ).join('');
+
+    const divider = `<div style="border-top:2px solid var(--border);margin:10px 0;"></div>`;
+
+    const body = `
+      <div style="padding-bottom:var(--space-2);">
+        ${row('Checking balance', App.formatCurrency(liquidBalance), liquidBalance >= 0 ? 'text-success' : 'text-danger')}
+        ${cardsDueItems.length ? row(`Cards due (${monthName})`, '-' + App.formatCurrency(cardsDue), 'text-danger') + subRows(cardsDueItems, '-', 'text-danger') : ''}
+        ${pendingBills.length ? row('Pending bills', '-' + App.formatCurrency(pendingRec.accountExpense), 'text-danger') + subRows(pendingBills, '-', 'text-danger') : ''}
+        ${pendingSubs.length ? row('Pending subscriptions', '-' + App.formatCurrency(pendingRec.cardExpense), 'text-danger') + subRows(pendingSubs, '-', 'text-danger') : ''}
+        ${pendingIncome.length ? row('Pending income', '+' + App.formatCurrency(pendingRec.income), 'text-success') + subRows(pendingIncome, '+', 'text-success') : ''}
+        ${divider}
+        <div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;">
+          <span style="font-weight:600;">End of month</span>
+          <span class="text-mono ${projected >= 0 ? 'text-success' : 'text-danger'}" style="font-size:1.125rem;font-weight:700;">${App.formatCurrency(projected)}</span>
+        </div>
+      </div>`;
+
+    Modal.open('Projection breakdown', body);
+  },
+
   /** Returns pending (not yet confirmed) recurrences for the current month */
   calcRecurrencesPending() {
     const today = new Date();
@@ -8803,6 +8862,9 @@ if (categorySelect) {
 }
 
 // Dashboard hero toggle: checking → savings → total → spending → checking …
+const projCard = document.getElementById('dash-projected');
+if (projCard) projCard.addEventListener('click', () => Dashboard.showProjectedBreakdown());
+
 const heroToggle = document.getElementById('dash-today-toggle');
 if (heroToggle) {
   heroToggle.addEventListener('click', () => {
