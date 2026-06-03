@@ -3222,7 +3222,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 56 · Jun 3, 2026</div>
+          <div class="app-version">Version 57 · Jun 3, 2026</div>
         </div>
       </div>
     </section>
@@ -8250,10 +8250,20 @@ const Cards = {
       this.render();
     });
 
+    // Scroll active tab into view on initial render
+    const tabsContainer = document.getElementById('invoice-month-tabs');
+    const activeTab = tabsContainer?.querySelector('.invoice-month-tab.active');
+    if (activeTab && tabsContainer) {
+      activeTab.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
+    }
+
     document.querySelectorAll('.invoice-month-tab').forEach(tab => {
       tab.addEventListener('click', () => {
+        const savedScroll = document.getElementById('invoice-month-tabs')?.scrollLeft ?? 0;
         this.selectedInvoiceMonth = tab.dataset.month;
         this.render();
+        const el = document.getElementById('invoice-month-tabs');
+        if (el) el.scrollLeft = savedScroll;
       });
     });
 
