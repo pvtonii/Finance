@@ -3222,7 +3222,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 58 · Jun 3, 2026</div>
+          <div class="app-version">Version 59 · Jun 3, 2026</div>
         </div>
       </div>
     </section>
@@ -5905,10 +5905,25 @@ function openTransactionForm(transaction = null) {
     owner: Auth.getSession()?.userId || 'pv',
   };
 
+  // Detect installment group edit (parent of a group)
+  const isInstallmentGroup = isEdit && t.installment_group_id && t.installments_total > 1;
+  const installmentGroupMembers = isInstallmentGroup
+    ? State.transactions.filter(x => x.installment_group_id === t.installment_group_id)
+    : [];
+
   // Source: 'account' ou 'card'
   const initialSource = t.card_id ? 'card' : (isEdit ? 'account' : 'card');
 
-  Modal.open(isEdit ? 'Edit transaction' : 'New transaction', `
+  const modalTitle = isInstallmentGroup
+    ? `Edit installment group (${t.installments_total}x)`
+    : (isEdit ? 'Edit transaction' : 'New transaction');
+
+  const groupWarningHtml = isInstallmentGroup
+    ? `<div style="font-size:0.8125rem;color:var(--warning);background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.2);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);margin-bottom:var(--space-3);">Changes to description, category and owner apply to all ${t.installments_total} installments.</div>`
+    : '';
+
+  Modal.open(modalTitle, `
+    ${groupWarningHtml}
     <!-- Tipo -->
     <div class="type-toggle" id="tx-type" style="margin-bottom: var(--space-4);">
       <button type="button" data-type="expense" class="${t.type === 'expense' ? 'active expense' : ''}">Expense</button>
@@ -5917,7 +5932,8 @@ function openTransactionForm(transaction = null) {
 
     <!-- Valor -->
     <input class="amount-input" id="tx-amount" type="text" inputmode="decimal" placeholder="$0.00"
-           value="${t.amount ? formatAmountInput(t.amount) : ''}" autocomplete="off">
+           value="${t.amount ? formatAmountInput(t.amount) : ''}" autocomplete="off"
+           ${isInstallmentGroup ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}>
 
     <!-- Descrição (em cima pra você sempre saber onde gastou) -->
     <div class="form-field">
@@ -6508,31 +6524,45 @@ function openTransactionForm(transaction = null) {
       let savedTxId = null;
 
       if (isEdit) {
-        // Edição: atualizar 1 só
-        const data = {
-          ...baseData,
-          amount,
-          date,
-          account_id: selectedSource === 'account' ? selectedAccountId : null,
-          card_id: selectedSource === 'card' ? selectedCardId : null,
-          installments_total: 1,
-          installment_number: 1,
-          installment_group_id: null,
-          invoice_month: null,
-        };
-        if (selectedSource === 'card') {
-          const card = State.cards.find(c => c.id === selectedCardId);
-          if (card) data.invoice_month = Invoice.computeMonthString(date, card);
-        }
-        await Data.updateTransaction(transaction.id, data);
-        savedTxId = transaction.id;
-        if (ambiguousInfo && installments === 1) {
-          toast(`Updated → ${Invoice.formatMonth(ambiguousInfo.computed)}.`, 'success', {
-            label: `Move to ${Invoice.formatMonth(ambiguousInfo.alternative)}`,
-            onClick: () => moveTransactionToInvoice(savedTxId, ambiguousInfo.alternative),
-          });
+        if (isInstallmentGroup) {
+          // Propagate shared fields to ALL installments — keep each one's amount/date/invoice_month/installment fields intact
+          const sharedData = {
+            type: baseData.type,
+            description: baseData.description,
+            category_id: baseData.category_id,
+            owner: baseData.owner,
+            created_by: baseData.created_by,
+            tags: baseData.tags,
+          };
+          await Promise.all(installmentGroupMembers.map(m => Data.updateTransaction(m.id, sharedData)));
+          toast(`${installmentGroupMembers.length} installments updated`);
         } else {
-          toast('Transaction updated');
+          // Normal single transaction edit
+          const data = {
+            ...baseData,
+            amount,
+            date,
+            account_id: selectedSource === 'account' ? selectedAccountId : null,
+            card_id: selectedSource === 'card' ? selectedCardId : null,
+            installments_total: 1,
+            installment_number: 1,
+            installment_group_id: null,
+            invoice_month: null,
+          };
+          if (selectedSource === 'card') {
+            const card = State.cards.find(c => c.id === selectedCardId);
+            if (card) data.invoice_month = Invoice.computeMonthString(date, card);
+          }
+          await Data.updateTransaction(transaction.id, data);
+          savedTxId = transaction.id;
+          if (ambiguousInfo && installments === 1) {
+            toast(`Updated → ${Invoice.formatMonth(ambiguousInfo.computed)}.`, 'success', {
+              label: `Move to ${Invoice.formatMonth(ambiguousInfo.alternative)}`,
+              onClick: () => moveTransactionToInvoice(savedTxId, ambiguousInfo.alternative),
+            });
+          } else {
+            toast('Transaction updated');
+          }
         }
       } else if (selectedSource === 'card' && installments > 1) {
         // Criação parcelada: gera N transações, uma por mês
