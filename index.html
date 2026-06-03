@@ -1613,29 +1613,32 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
 
 .toast {
   position: fixed;
-  bottom: 100px;
+  top: calc(env(safe-area-inset-top) + var(--space-2));
   left: 50%;
-  transform: translateX(-50%) translateY(20px);
+  transform: translateX(-50%) translateY(-12px);
   background: var(--bg-elevated);
   color: var(--text-primary);
   padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xl);
   border: 1px solid var(--border-default);
   font-size: 0.875rem;
   font-weight: 500;
-  z-index: 200;
+  z-index: 300;
   opacity: 0;
   pointer-events: none;
-  transition: all var(--duration) var(--ease);
+  transition: opacity 220ms var(--ease), transform 280ms var(--ease-out);
   box-shadow: var(--shadow-lg);
-  max-width: 90%;
+  width: min(400px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 .toast.visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
-.toast.success { border-color: var(--success); }
-.toast.error { border-color: var(--danger); }
+.toast.success { border-left: 3px solid var(--success); }
+.toast.error   { border-left: 3px solid var(--danger); }
 
 .loading {
   display: inline-block;
@@ -2891,16 +2894,17 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
 /* Toast com ação (clicável) */
 .toast.with-action {
   cursor: pointer;
-  padding-right: var(--space-5);
   pointer-events: auto;
 }
 .toast-action {
+  margin-left: auto;
+  flex-shrink: 0;
   font-weight: 600;
+  font-size: 0.8125rem;
   color: white;
   background: var(--info);
-  border-radius: var(--radius-sm);
-  padding: 3px 10px;
-  margin-left: var(--space-3);
+  border-radius: var(--radius-full);
+  padding: 4px 12px;
   white-space: nowrap;
 }
 
@@ -3218,7 +3222,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 54 · Jun 3, 2026</div>
+          <div class="app-version">Version 55 · Jun 3, 2026</div>
         </div>
       </div>
     </section>
@@ -4442,14 +4446,14 @@ function toast(msg, type = 'success', action = null) {
   const t = document.getElementById('toast');
 
   if (action) {
-    t.innerHTML = `${escapeHtml(msg)} <span class="toast-action">${escapeHtml(action.label)}</span>`;
+    t.innerHTML = `<span style="flex:1;">${escapeHtml(msg)}</span><span class="toast-action">${escapeHtml(action.label)}</span>`;
     t.classList.add('with-action');
     t.onclick = () => {
       t.classList.remove('visible');
       action.onClick();
     };
   } else {
-    t.textContent = msg;
+    t.innerHTML = `<span>${escapeHtml(msg)}</span>`;
     t.classList.remove('with-action');
     t.onclick = null;
   }
