@@ -3222,7 +3222,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 57 · Jun 3, 2026</div>
+          <div class="app-version">Version 58 · Jun 3, 2026</div>
         </div>
       </div>
     </section>
@@ -9117,8 +9117,18 @@ document.addEventListener('click', (e) => {
   const editTx = e.target.closest('[data-edit-tx]');
   if (editTx) {
     const id = editTx.dataset.editTx;
-    const t = State.transactions.find(x => x.id === id);
-    if (t) openTransactionForm(t);
+    let t = State.transactions.find(x => x.id === id);
+    if (t) {
+      // Child installment → redirect to parent silently
+      if (t.installment_group_id && t.installment_number > 1) {
+        const parent = State.transactions.find(x =>
+          x.installment_group_id === t.installment_group_id && x.installment_number === 1
+        );
+        if (parent) t = parent;
+        else { toast('Original installment not found', 'error'); return; }
+      }
+      openTransactionForm(t);
+    }
     return;
   }
 
