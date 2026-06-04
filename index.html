@@ -2272,6 +2272,25 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
   color: var(--bg-primary);
   border-color: var(--text-primary);
 }
+.invoice-month-tab.tab-forming {
+  border-color: rgba(251,191,36,0.4);
+  color: var(--warning);
+}
+.invoice-month-tab.tab-paid {
+  border-color: rgba(74,222,128,0.3);
+  color: var(--success);
+}
+.invoice-month-tab.tab-due {
+  border-color: rgba(248,113,113,0.35);
+  color: var(--danger);
+}
+.invoice-month-tab.active.tab-forming,
+.invoice-month-tab.active.tab-paid,
+.invoice-month-tab.active.tab-due {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  border-color: var(--text-primary);
+}
 
 .invoice-summary {
   background: var(--bg-secondary);
@@ -3222,7 +3241,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 62 · Jun 3, 2026</div>
+          <div class="app-version">Version 63 · Jun 3, 2026</div>
         </div>
       </div>
     </section>
@@ -6529,13 +6548,13 @@ function openTransactionForm(transaction = null) {
         if (isInstallmentGroup) {
           const amountChanged = Math.abs(amount - installmentGroupTotal) > 0.001;
           const countChanged = installments !== installmentGroupMembers.length;
-          if (amountChanged || countChanged) {
-            // Delete old group and recreate with new amount/count
+          const dateChanged = date !== installmentGroupMembers[0].date;
+          if (amountChanged || countChanged || dateChanged) {
+            // Delete old group and recreate with new values
             const card = State.cards.find(c => c.id === installmentGroupMembers[0].card_id);
-            const originalDate = installmentGroupMembers[0].date;
             for (const m of installmentGroupMembers) await Data.deleteTransaction(m.id);
             const newGroupId = crypto.randomUUID();
-            const firstInvoice = Invoice.computeMonthString(originalDate, card);
+            const firstInvoice = Invoice.computeMonthString(date, card);
             const eachAmount = Math.round((amount / installments) * 100) / 100;
             const lastAmount = Math.round((amount - eachAmount * (installments - 1)) * 100) / 100;
             const rows = [];
@@ -6543,7 +6562,7 @@ function openTransactionForm(transaction = null) {
               rows.push({
                 ...baseData,
                 amount: i === installments - 1 ? lastAmount : eachAmount,
-                date: originalDate,
+                date,
                 account_id: null,
                 card_id: installmentGroupMembers[0].card_id,
                 installments_total: installments,
@@ -8222,15 +8241,18 @@ const Cards = {
 
       <div class="invoice-month-tabs" id="invoice-month-tabs">
         ${months.map(m => {
-          let label;
+          let label, stateClass;
           if (m === currentMonth) {
             label = 'Forming';
+            stateClass = 'tab-forming';
           } else {
             const [y, mo] = m.split('-').map(Number);
             const d = new Date(y, mo - 1, Number(card.due_day));
             label = 'Due ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const status = Invoice.getInvoiceStatus(card.id, m);
+            stateClass = status === 'paid' ? 'tab-paid' : 'tab-due';
           }
-          return `<button class="invoice-month-tab ${m === this.selectedInvoiceMonth ? 'active' : ''}" data-month="${m}">${label}</button>`;
+          return `<button class="invoice-month-tab ${stateClass} ${m === this.selectedInvoiceMonth ? 'active' : ''}" data-month="${m}">${label}</button>`;
         }).join('')}
       </div>
 
