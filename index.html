@@ -3241,7 +3241,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 63 · Jun 3, 2026</div>
+          <div class="app-version">Version 64 · Jun 8, 2026</div>
         </div>
       </div>
     </section>
@@ -5912,16 +5912,17 @@ function openTransactionForm(transaction = null) {
   const isEdit = !!transaction;
 
   const today = new Date().toISOString().split('T')[0];
+  const _sessionUser = Auth.getSession()?.userId || 'pv';
   const t = transaction || {
     type: 'expense',
     amount: '',
     description: '',
     date: today,
     category_id: null,
-    account_id: State.accounts[0]?.id || null,
+    account_id: (State.accounts.find(a => a.owner === _sessionUser) || State.accounts[0])?.id || null,
     card_id: null,
     installments_total: 1,
-    owner: Auth.getSession()?.userId || 'pv',
+    owner: _sessionUser,
   };
 
   // Detect installment group edit (parent of a group)
