@@ -3241,7 +3241,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 65 · Jun 13, 2026</div>
+          <div class="app-version">Version 66 · Jun 13, 2026</div>
         </div>
       </div>
     </section>
@@ -4492,13 +4492,18 @@ function toast(msg, type = 'success', action = null) {
    ============================================ */
 const Modal = {
   _touchBlock: null,
+  _scrollY: 0,
   open(title, bodyHtml) {
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = bodyHtml;
     document.getElementById('modal-overlay').classList.add('active');
     document.getElementById('modal').classList.add('active');
+    // iOS-safe scroll lock: position:fixed preserves page position without allowing scroll-bleed
+    this._scrollY = window.scrollY;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${this._scrollY}px`;
+    document.body.style.width = '100%';
     document.body.style.overflow = 'hidden';
-    // iOS: block touchmove on overlay to prevent background scroll
     const overlay = document.getElementById('modal-overlay');
     this._touchBlock = e => e.preventDefault();
     overlay.addEventListener('touchmove', this._touchBlock, { passive: false });
@@ -4506,7 +4511,12 @@ const Modal = {
   close() {
     document.getElementById('modal-overlay').classList.remove('active');
     document.getElementById('modal').classList.remove('active');
+    // Restore scroll position
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.width = '';
     document.body.style.overflow = '';
+    window.scrollTo(0, this._scrollY);
     const overlay = document.getElementById('modal-overlay');
     if (this._touchBlock) { overlay.removeEventListener('touchmove', this._touchBlock); this._touchBlock = null; }
   },
@@ -5993,9 +6003,9 @@ function openTransactionForm(transaction = null) {
         <button type="button" class="installments-btn" id="inst-plus">+</button>
       </div>
       <div id="debit-freq-block" style="display:none; margin-top: var(--space-2);">
-        <div class="segment-control" id="debit-freq-toggle">
-          <button type="button" data-freq="monthly" class="active">Monthly</button>
-          <button type="button" data-freq="biweekly">Bi-weekly</button>
+        <div class="cards-owner-tabs" id="debit-freq-toggle" style="margin-bottom:0;">
+          <button type="button" class="cards-owner-tab active" data-freq="monthly">Monthly</button>
+          <button type="button" class="cards-owner-tab" data-freq="biweekly">Bi-weekly</button>
         </div>
       </div>
     </div>
