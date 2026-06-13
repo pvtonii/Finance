@@ -3241,7 +3241,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 64 · Jun 8, 2026</div>
+          <div class="app-version">Version 65 · Jun 13, 2026</div>
         </div>
       </div>
     </section>
@@ -5981,9 +5981,9 @@ function openTransactionForm(transaction = null) {
       <div class="picker-grid" id="tx-source-picker"></div>
     </div>
 
-    <!-- Parcelamento (só aparece se source=card) -->
+    <!-- Parcelamento (cartão ou débito) -->
     <div class="form-field hidden" id="tx-installments-block">
-      <label class="form-label">Installments</label>
+      <label class="form-label" id="inst-label">Installments</label>
       <div class="installments-stepper">
         <button type="button" class="installments-btn" id="inst-minus">−</button>
         <div class="installments-display">
@@ -5991,6 +5991,12 @@ function openTransactionForm(transaction = null) {
           <div class="installments-each" id="inst-each"></div>
         </div>
         <button type="button" class="installments-btn" id="inst-plus">+</button>
+      </div>
+      <div id="debit-freq-block" style="display:none; margin-top: var(--space-2);">
+        <div class="segment-control" id="debit-freq-toggle">
+          <button type="button" data-freq="monthly" class="active">Monthly</button>
+          <button type="button" data-freq="biweekly">Bi-weekly</button>
+        </div>
       </div>
     </div>
 
@@ -6034,6 +6040,7 @@ function openTransactionForm(transaction = null) {
     <div class="flex gap-3" style="margin-top: var(--space-5);">
       ${isEdit ? `<button class="btn btn-danger" id="tx-delete">Delete</button>` : ''}
       ${isEdit && !t.is_refund ? `<button class="btn btn-secondary" id="tx-return">↩ Refund</button>` : ''}
+      ${isEdit ? `<button class="btn btn-secondary" id="tx-duplicate">⧉ Duplicate</button>` : ''}
       <button class="btn btn-primary" id="tx-save">${isEdit ? 'Save' : 'Add'}</button>
     </div>
   `);
@@ -6045,6 +6052,7 @@ function openTransactionForm(transaction = null) {
   let selectedCardId = t.card_id;
   let selectedSource = initialSource; // 'account' | 'card'
   let installments = t.installments_total || 1;
+  let debitFrequency = 'monthly'; // 'monthly' | 'biweekly' — only used for account installments
   let showAllSources = false; // U3: when true, ignores owner filter on Pay with
 
   // ===== Tags state & setup =====
@@ -6186,6 +6194,15 @@ function openTransactionForm(transaction = null) {
     if (installments < 24) { installments++; updateInstallmentsDisplay(); }
   });
 
+  // Debit frequency toggle
+  document.getElementById('debit-freq-toggle').querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('debit-freq-toggle').querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      debitFrequency = btn.dataset.freq;
+    });
+  });
+
   // Mais opções
   const moreToggle = document.getElementById('tx-more-toggle');
   const moreContent = document.getElementById('tx-more-content');
@@ -6213,14 +6230,29 @@ function openTransactionForm(transaction = null) {
     }
     document.getElementById('inst-minus').disabled = installments <= 1;
     document.getElementById('inst-plus').disabled = installments >= 24;
+    // Show/hide freq toggle for debit installments
+    const freqBlock = document.getElementById('debit-freq-block');
+    if (freqBlock && selectedSource === 'account') {
+      freqBlock.style.display = installments > 1 ? '' : 'none';
+    }
   }
 
   function updateInstallmentsVisibility() {
     const block = document.getElementById('tx-installments-block');
-    if (selectedSource === 'card' && selectedType === 'expense') {
+    const freqBlock = document.getElementById('debit-freq-block');
+    const label = document.getElementById('inst-label');
+    if (selectedType === 'expense' && (selectedSource === 'card' || selectedSource === 'account')) {
       block.classList.remove('hidden');
+      if (selectedSource === 'account') {
+        if (label) label.textContent = 'Debit installments';
+        if (freqBlock) freqBlock.style.display = installments > 1 ? '' : 'none';
+      } else {
+        if (label) label.textContent = 'Installments';
+        if (freqBlock) freqBlock.style.display = 'none';
+      }
     } else {
       block.classList.add('hidden');
+      if (freqBlock) freqBlock.style.display = 'none';
       installments = 1;
       updateInstallmentsDisplay();
     }
@@ -6614,6 +6646,29 @@ function openTransactionForm(transaction = null) {
             toast('Transaction updated');
           }
         }
+      } else if (selectedSource === 'account' && installments > 1) {
+        // Criação parcelada no débito: gera N transações com datas espaçadas
+        const groupId = crypto.randomUUID();
+        const eachAmount = Math.round((amount / installments) * 100) / 100;
+        const lastAmount = Math.round((amount - eachAmount * (installments - 1)) * 100) / 100;
+        const rows = [];
+        for (let i = 0; i < installments; i++) {
+          const d = new Date(date + 'T12:00:00');
+          if (debitFrequency === 'biweekly') d.setDate(d.getDate() + i * 14);
+          else d.setMonth(d.getMonth() + i);
+          rows.push({
+            ...baseData,
+            amount: i === installments - 1 ? lastAmount : eachAmount,
+            date: d.toISOString().split('T')[0],
+            account_id: selectedAccountId,
+            card_id: null,
+            installments_total: installments,
+            installment_number: i + 1,
+            installment_group_id: groupId,
+          });
+        }
+        await Data.createTransactionsBatch(rows);
+        toast(`${installments} debit installments created`);
       } else if (selectedSource === 'card' && installments > 1) {
         // Criação parcelada: gera N transações, uma por mês
         const card = State.cards.find(c => c.id === selectedCardId);
@@ -6682,6 +6737,20 @@ function openTransactionForm(transaction = null) {
     document.getElementById('tx-return')?.addEventListener('click', () => {
       Modal.close();
       openRefundForm(transaction);
+    });
+
+    document.getElementById('tx-duplicate').addEventListener('click', () => {
+      Modal.close();
+      openTransactionForm({
+        ...t,
+        id: undefined,
+        date: today,
+        installments_total: 1,
+        installment_number: null,
+        installment_group_id: null,
+        created_at: undefined,
+        updated_at: undefined,
+      });
     });
 
     document.getElementById('tx-delete').addEventListener('click', async () => {
