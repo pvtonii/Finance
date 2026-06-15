@@ -3241,7 +3241,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 67 · Jun 13, 2026</div>
+          <div class="app-version">Version 68 · Jun 14, 2026</div>
         </div>
       </div>
     </section>
@@ -3442,6 +3442,12 @@ const Connection = {
 };
 
 let db = null;
+
+// Returns today's date as YYYY-MM-DD in the device's local timezone (not UTC)
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 
 function getQuinzenalOccurrences(startDateStr, year, month) {
   const start = new Date(startDateStr + 'T12:00:00');
@@ -5320,7 +5326,7 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
 
     <div class="form-field" id="sub-start-field" ${selectedFrequency !== 'quinzenal' ? 'style="display:none;"' : ''}>
       <label class="form-label">Start date</label>
-      <input class="form-input" id="sub-start-date" type="date" value="${s.billing_start_date || new Date().toISOString().split('T')[0]}">
+      <input class="form-input" id="sub-start-date" type="date" value="${s.billing_start_date || localToday()}">
       <div class="form-help">Date of the first / next payment</div>
     </div>
 
@@ -5921,7 +5927,7 @@ const Transactions = {
 function openTransactionForm(transaction = null) {
   const isEdit = !!(transaction?.id);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
   const _sessionUser = Auth.getSession()?.userId || 'pv';
   const t = transaction || {
     type: 'expense',
@@ -6808,7 +6814,7 @@ function openRefundForm(originalTx) {
     : State.accounts.find(a => a.id === originalTx.account_id);
   const sourceLabel = source ? `${originalTx.card_id ? '💳' : '🏦'} ${source.name}` : '—';
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
   const defaultDesc = `Return: ${originalTx.description || ''}`.trim();
 
   Modal.open('Refund', `
@@ -6897,7 +6903,7 @@ function openTransferForm(opts = null) {
   const transferGroupId = opts?.transferGroupId || null;
   const externalTxId = opts?.externalTxId || null;
   const isEdit = !!(transferGroupId || externalTxId);
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
 
   // Load existing transfer if editing
   let existing = null;
@@ -7235,7 +7241,7 @@ function openPayStatementForm(cardId, invoiceMonth) {
   const total = Invoice.getInvoiceTotal(cardId, invoiceMonth);
   const alreadyPaid = Invoice.getInvoicePaid(cardId, invoiceMonth);
   const remaining = Math.max(0, total - alreadyPaid);
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
 
   // Default account = card's linked account, or first account
   const defaultAccountId = card.account_id || State.accounts[0]?.id;
@@ -8185,7 +8191,7 @@ const Cards = {
     }
 
     const cardsHtml = filtered.map(card => {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = localToday();
       const nextUnpaidMonth = Invoice.getNextUnpaidInvoice(card.id);
       const nextUnpaidAmount = nextUnpaidMonth
         ? Math.max(0, Invoice.getInvoiceTotal(card.id, nextUnpaidMonth) - Invoice.getInvoicePaid(card.id, nextUnpaidMonth))
@@ -8292,7 +8298,7 @@ const Cards = {
 
     const months = Invoice.getCardInvoiceMonths(card.id);
     // Adicionar mês atual se não estiver na lista
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = localToday();
     const currentMonth = Invoice.computeMonthString(todayStr, card);
     if (!months.includes(currentMonth)) months.unshift(currentMonth);
 
@@ -8485,7 +8491,7 @@ const Dashboard = {
     valEl.classList.remove('text-success', 'text-danger');
 
     if (viewMode === 'spending') {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = localToday();
       let todaySpending = 0;
       State.transactions.forEach(t => {
         if (t.date !== todayStr) return;
