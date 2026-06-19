@@ -716,6 +716,8 @@ h1, h2, h3 {
   display: flex;
   justify-content: space-around;
   padding-bottom: env(safe-area-inset-bottom);
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
 }
 /* On wide screens center the bar without breaking position:fixed
    (margin:auto doesn't work with fixed; use left:50% + translateX) */
@@ -723,7 +725,8 @@ h1, h2, h3 {
   .bottom-nav {
     left: 50%;
     right: auto;
-    transform: translateX(-50%);
+    transform: translateX(-50%) translateZ(0);
+    -webkit-transform: translateX(-50%) translateZ(0);
     width: 100%;
     max-width: 480px;
     border-radius: 14px 14px 0 0;
@@ -867,6 +870,8 @@ h1, h2, h3 {
   overflow-x: hidden;
   flex: 1;
   scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .picker-grid {
@@ -3241,7 +3246,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 68 · Jun 14, 2026</div>
+          <div class="app-version">Version 69 · Jun 14, 2026</div>
         </div>
       </div>
     </section>
@@ -4498,17 +4503,11 @@ function toast(msg, type = 'success', action = null) {
    ============================================ */
 const Modal = {
   _touchBlock: null,
-  _scrollY: 0,
   open(title, bodyHtml) {
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = bodyHtml;
     document.getElementById('modal-overlay').classList.add('active');
     document.getElementById('modal').classList.add('active');
-    // iOS-safe scroll lock: position:fixed preserves page position without allowing scroll-bleed
-    this._scrollY = window.scrollY;
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${this._scrollY}px`;
-    document.body.style.width = '100%';
     document.body.style.overflow = 'hidden';
     const overlay = document.getElementById('modal-overlay');
     this._touchBlock = e => e.preventDefault();
@@ -4517,12 +4516,7 @@ const Modal = {
   close() {
     document.getElementById('modal-overlay').classList.remove('active');
     document.getElementById('modal').classList.remove('active');
-    // Restore scroll position
-    document.body.style.position = '';
-    document.body.style.top = '';
-    document.body.style.width = '';
     document.body.style.overflow = '';
-    window.scrollTo(0, this._scrollY);
     const overlay = document.getElementById('modal-overlay');
     if (this._touchBlock) { overlay.removeEventListener('touchmove', this._touchBlock); this._touchBlock = null; }
   },
