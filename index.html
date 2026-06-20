@@ -245,6 +245,11 @@ h1, h2, h3 {
   background: var(--bg-primary);
   width: 100%;
 }
+#screen-app.scroll-locked {
+  overflow: hidden;
+  height: 100dvh;
+  height: 100vh;
+}
 
 .app-header {
   display: flex;
@@ -716,8 +721,6 @@ h1, h2, h3 {
   display: flex;
   justify-content: space-around;
   padding-bottom: env(safe-area-inset-bottom);
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
 }
 /* On wide screens center the bar without breaking position:fixed
    (margin:auto doesn't work with fixed; use left:50% + translateX) */
@@ -725,8 +728,7 @@ h1, h2, h3 {
   .bottom-nav {
     left: 50%;
     right: auto;
-    transform: translateX(-50%) translateZ(0);
-    -webkit-transform: translateX(-50%) translateZ(0);
+    transform: translateX(-50%);
     width: 100%;
     max-width: 480px;
     border-radius: 14px 14px 0 0;
@@ -871,7 +873,6 @@ h1, h2, h3 {
   flex: 1;
   scrollbar-gutter: stable;
   overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
 }
 
 .picker-grid {
@@ -3246,7 +3247,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 69 · Jun 14, 2026</div>
+          <div class="app-version">Version 70 · Jun 14, 2026</div>
         </div>
       </div>
     </section>
@@ -4508,7 +4509,7 @@ const Modal = {
     document.getElementById('modal-body').innerHTML = bodyHtml;
     document.getElementById('modal-overlay').classList.add('active');
     document.getElementById('modal').classList.add('active');
-    document.body.style.overflow = 'hidden';
+    document.getElementById('screen-app')?.classList.add('scroll-locked');
     const overlay = document.getElementById('modal-overlay');
     this._touchBlock = e => e.preventDefault();
     overlay.addEventListener('touchmove', this._touchBlock, { passive: false });
@@ -4516,7 +4517,7 @@ const Modal = {
   close() {
     document.getElementById('modal-overlay').classList.remove('active');
     document.getElementById('modal').classList.remove('active');
-    document.body.style.overflow = '';
+    document.getElementById('screen-app')?.classList.remove('scroll-locked');
     const overlay = document.getElementById('modal-overlay');
     if (this._touchBlock) { overlay.removeEventListener('touchmove', this._touchBlock); this._touchBlock = null; }
   },
