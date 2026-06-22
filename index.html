@@ -87,7 +87,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { min-height: 100%; }
+html { height: 100%; overflow: hidden; }
 body {
   font-family: var(--font-body);
   background: var(--bg-primary);
@@ -97,6 +97,8 @@ body {
   letter-spacing: -0.01em;
   line-height: 1.5;
   margin: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 button, input, select, textarea { font-family: inherit; color: inherit; font-size: 1rem; }
@@ -256,7 +258,8 @@ h1, h2, h3 {
 #screen-app.active {
   display: flex;
   flex-direction: column;
-  min-height: 100svh;
+  height: 100%;
+  overflow: hidden;
 }
 
 .app-header {
@@ -397,10 +400,14 @@ h1, h2, h3 {
 .app-content {
   max-width: 480px;
   margin: 0 auto;
-  padding: var(--space-4) var(--space-5) calc(56px + env(safe-area-inset-bottom) + var(--space-5));
+  padding: var(--space-4) var(--space-5) var(--space-5);
   width: 100%;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .page { display: none; }
@@ -720,23 +727,19 @@ h1, h2, h3 {
 }
 
 .bottom-nav {
-  position: fixed;
-  bottom: calc(env(safe-area-inset-bottom) + 8px);
-  left: 0;
-  right: 0;
+  flex: 0 0 auto;
   z-index: 80;
   display: flex;
   justify-content: space-around;
   align-items: center;
-  max-width: 440px;
-  margin: 0 auto;
-  padding: 0 6px;
+  padding: 0 6px env(safe-area-inset-bottom);
   background: var(--nav-glass-bg);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid var(--nav-glass-border);
-  border-radius: 28px;
-  box-shadow: 0 -4px 24px rgba(0,0,0,0.45), 0 4px 12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.07);
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.07);
 }
 .nav-item {
   flex: 1;
@@ -3283,7 +3286,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 95 · Jun 22, 2026</div>
+          <div class="app-version">Version 96 · Jun 22, 2026</div>
         </div>
       </div>
     </section>
@@ -3322,9 +3325,8 @@ html { scroll-behavior: smooth; }
       <div id="insights-page-content"></div>
     </section>
   </main>
-</div>
 
-<nav class="bottom-nav">
+  <nav class="bottom-nav">
   <button class="nav-item active" data-page="dashboard">
     <svg viewBox="0 0 24 24" fill="none">
       <rect x="3" y="3" width="7" height="9" rx="1" stroke="currentColor"/>
@@ -3360,7 +3362,8 @@ html { scroll-behavior: smooth; }
     </svg>
     <span>More</span>
   </button>
-</nav>
+  </nav>
+</div>
 
 <!-- FAB + overlays -->
 <div class="fab-backdrop" id="fab-backdrop"></div>
@@ -4639,8 +4642,8 @@ function showPage(name) {
   }
   if (name === 'calendar') Calendar.render();
   if (name === 'insights') Insights.render();
-  // Scroll AFTER render so page height is stable (avoids iOS fixed-element glitch)
-  window.scrollTo(0, 0);
+  const scroller = document.querySelector('.app-content');
+  if (scroller) scroller.scrollTop = 0;
 }
 
 function resetLoginUI() {
