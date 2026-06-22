@@ -79,7 +79,10 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { overflow-x: hidden; }
+/* App-shell: html/body never scroll. The scrollable area is .app-content (inner).
+   This keeps position:fixed elements (bottom nav, FAB) rock-solid on iOS, since
+   there is no document-level scroll for them to lag behind. */
+html { height: 100%; overflow: hidden; }
 body {
   font-family: var(--font-body);
   background: var(--bg-primary);
@@ -88,13 +91,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.01em;
   line-height: 1.5;
-  min-height: 100vh;
+  height: 100%;
   margin: 0;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 button, input, select, textarea { font-family: inherit; color: inherit; font-size: 1rem; }
 button { background: none; border: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* iOS: SVGs inside buttons must not capture taps, or fill="none" icons swallow clicks */
+button svg { pointer-events: none; }
 input, select, textarea { background: none; border: none; outline: none; }
 
 h1, h2, h3 {
@@ -245,14 +250,14 @@ h1, h2, h3 {
   background: var(--bg-primary);
   width: 100%;
 }
-/* iOS-safe scroll lock: fix the CONTENT wrapper (sibling of nav), not body/html.
-   Because nav is a sibling — not a descendant — its position:fixed stays anchored
-   to the viewport and never glitches. top:-scrollY preserves the visual position. */
-#screen-app.scroll-locked {
-  position: fixed;
-  left: 0;
-  right: 0;
-  width: 100%;
+/* When active, #screen-app is a full-viewport flex column: fixed header on top,
+   scrollable content filling the rest. Body itself does not scroll. */
+#screen-app.active {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .app-header {
@@ -261,8 +266,7 @@ h1, h2, h3 {
   justify-content: space-between;
   padding: calc(var(--space-5) + env(safe-area-inset-top)) var(--space-5) var(--space-4);
   background: var(--bg-primary);
-  position: sticky;
-  top: 0;
+  flex: 0 0 auto;
   z-index: 10;
 }
 .header-title-wrap {
@@ -396,6 +400,12 @@ h1, h2, h3 {
   margin: 0 auto;
   padding: var(--space-4) var(--space-5) calc(72px + env(safe-area-inset-bottom) + 20px);
   width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .page { display: none; }
@@ -3251,7 +3261,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 72 · Jun 21, 2026</div>
+          <div class="app-version">Version 73 · Jun 21, 2026</div>
         </div>
       </div>
     </section>
@@ -4508,19 +4518,15 @@ function toast(msg, type = 'success', action = null) {
    ============================================ */
 const Modal = {
   _touchBlock: null,
-  _scrollY: 0,
   open(title, bodyHtml) {
-    this._scrollY = window.scrollY;
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = bodyHtml;
     document.getElementById('modal-overlay').classList.add('active');
     document.getElementById('modal').classList.add('active');
-    // Lock scroll on the CONTENT wrapper (sibling of nav) — keeps nav fixed to viewport.
-    const app = document.getElementById('screen-app');
-    if (app) {
-      app.style.top = `-${this._scrollY}px`;
-      app.classList.add('scroll-locked');
-    }
+    // Lock the inner scroll container. Toggling overflow on a non-root scroller
+    // preserves its scrollTop, so no save/restore is needed.
+    const scroller = document.querySelector('.app-content');
+    if (scroller) scroller.style.overflow = 'hidden';
     const overlay = document.getElementById('modal-overlay');
     this._touchBlock = e => e.preventDefault();
     overlay.addEventListener('touchmove', this._touchBlock, { passive: false });
@@ -4528,12 +4534,8 @@ const Modal = {
   close() {
     document.getElementById('modal-overlay').classList.remove('active');
     document.getElementById('modal').classList.remove('active');
-    const app = document.getElementById('screen-app');
-    if (app) {
-      app.classList.remove('scroll-locked');
-      app.style.top = '';
-    }
-    window.scrollTo(0, this._scrollY);
+    const scroller = document.querySelector('.app-content');
+    if (scroller) scroller.style.overflow = '';
     const overlay = document.getElementById('modal-overlay');
     if (this._touchBlock) { overlay.removeEventListener('touchmove', this._touchBlock); this._touchBlock = null; }
   },
@@ -4566,6 +4568,9 @@ const PAGE_TITLES = {
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
+  // Scroll the inner content container back to top on page change
+  const scroller = document.querySelector('.app-content');
+  if (scroller) scroller.scrollTop = 0;
   // Update nav active state — settings/insights both light up the "More" button
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.id === 'nav-more-btn') {
