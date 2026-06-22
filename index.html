@@ -408,7 +408,7 @@ h1, h2, h3 {
 .app-content {
   max-width: 480px;
   margin: 0 auto;
-  padding: var(--space-4) var(--space-5) calc(76px + env(safe-area-inset-bottom) + var(--space-5));
+  padding: var(--space-4) var(--space-5) calc(72px + var(--space-4));
   width: 100%;
   flex: 1 1 auto;
   min-height: 0;
@@ -735,17 +735,13 @@ h1, h2, h3 {
 }
 
 .bottom-nav {
-  position: absolute;
-  bottom: calc(env(safe-area-inset-bottom) + 10px);
-  left: 50%;
-  transform: translateX(-50%);
+  flex: 0 0 auto;
   z-index: 80;
   display: flex;
   justify-content: space-around;
   align-items: center;
   padding: 0 6px;
-  width: calc(100% - 40px);
-  max-width: 440px;
+  margin: 0 20px calc(env(safe-area-inset-bottom) + 10px);
   background: var(--nav-glass-bg);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
@@ -3298,7 +3294,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 80 · Jun 22, 2026</div>
+          <div class="app-version">Version 81 · Jun 22, 2026</div>
         </div>
       </div>
     </section>
