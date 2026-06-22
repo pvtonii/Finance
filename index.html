@@ -250,13 +250,15 @@ h1, h2, h3 {
   background: var(--bg-primary);
   width: 100%;
 }
-/* When active, #screen-app is a full-viewport flex column: fixed header on top,
-   scrollable content filling the rest. Body itself does not scroll. */
+/* When active, #screen-app is a full-viewport flex column: header on top,
+   scrollable content in the middle, nav at the bottom. position:fixed + inset:0
+   pins it to the exact viewport, avoiding all vh/dvh/% discrepancies on iOS.
+   (nav, FAB, modal are SIBLINGS — not descendants — so they are unaffected.) */
 #screen-app.active {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  height: 100dvh;
+  position: fixed;
+  inset: 0;
   overflow: hidden;
 }
 
@@ -3292,7 +3294,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 74 · Jun 21, 2026</div>
+          <div class="app-version">Version 75 · Jun 21, 2026</div>
         </div>
       </div>
     </section>
