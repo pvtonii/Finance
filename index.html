@@ -245,6 +245,15 @@ h1, h2, h3 {
   background: var(--bg-primary);
   width: 100%;
 }
+/* iOS-safe scroll lock: fix the CONTENT wrapper (sibling of nav), not body/html.
+   Because nav is a sibling — not a descendant — its position:fixed stays anchored
+   to the viewport and never glitches. top:-scrollY preserves the visual position. */
+#screen-app.scroll-locked {
+  position: fixed;
+  left: 0;
+  right: 0;
+  width: 100%;
+}
 
 .app-header {
   display: flex;
@@ -3242,7 +3251,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 71 · Jun 21, 2026</div>
+          <div class="app-version">Version 72 · Jun 21, 2026</div>
         </div>
       </div>
     </section>
@@ -4506,8 +4515,12 @@ const Modal = {
     document.getElementById('modal-body').innerHTML = bodyHtml;
     document.getElementById('modal-overlay').classList.add('active');
     document.getElementById('modal').classList.add('active');
-    // Lock on <html> (not body) — iOS respects this and doesn't break position:fixed
-    document.documentElement.style.overflow = 'hidden';
+    // Lock scroll on the CONTENT wrapper (sibling of nav) — keeps nav fixed to viewport.
+    const app = document.getElementById('screen-app');
+    if (app) {
+      app.style.top = `-${this._scrollY}px`;
+      app.classList.add('scroll-locked');
+    }
     const overlay = document.getElementById('modal-overlay');
     this._touchBlock = e => e.preventDefault();
     overlay.addEventListener('touchmove', this._touchBlock, { passive: false });
@@ -4515,7 +4528,11 @@ const Modal = {
   close() {
     document.getElementById('modal-overlay').classList.remove('active');
     document.getElementById('modal').classList.remove('active');
-    document.documentElement.style.overflow = '';
+    const app = document.getElementById('screen-app');
+    if (app) {
+      app.classList.remove('scroll-locked');
+      app.style.top = '';
+    }
     window.scrollTo(0, this._scrollY);
     const overlay = document.getElementById('modal-overlay');
     if (this._touchBlock) { overlay.removeEventListener('touchmove', this._touchBlock); this._touchBlock = null; }
