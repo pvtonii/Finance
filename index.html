@@ -749,8 +749,8 @@ h1, h2, h3 {
   font-size: 0.625rem;
   font-weight: 500;
   letter-spacing: 0.02em;
-  transition: color var(--duration) var(--ease);
-  position: relative;
+  border-radius: 16px;
+  transition: color var(--duration) var(--ease), background var(--duration) var(--ease);
 }
 .nav-item:hover { color: var(--text-secondary); }
 .nav-item.active { color: var(--text-primary); background: var(--nav-active-bg); }
@@ -3283,7 +3283,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 92 · Jun 22, 2026</div>
+          <div class="app-version">Version 93 · Jun 22, 2026</div>
         </div>
       </div>
     </section>
