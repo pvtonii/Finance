@@ -245,11 +245,6 @@ h1, h2, h3 {
   background: var(--bg-primary);
   width: 100%;
 }
-#screen-app.scroll-locked {
-  overflow: hidden;
-  height: 100dvh;
-  height: 100vh;
-}
 
 .app-header {
   display: flex;
@@ -3247,7 +3242,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 70 · Jun 14, 2026</div>
+          <div class="app-version">Version 71 · Jun 21, 2026</div>
         </div>
       </div>
     </section>
@@ -4504,12 +4499,15 @@ function toast(msg, type = 'success', action = null) {
    ============================================ */
 const Modal = {
   _touchBlock: null,
+  _scrollY: 0,
   open(title, bodyHtml) {
+    this._scrollY = window.scrollY;
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = bodyHtml;
     document.getElementById('modal-overlay').classList.add('active');
     document.getElementById('modal').classList.add('active');
-    document.getElementById('screen-app')?.classList.add('scroll-locked');
+    // Lock on <html> (not body) — iOS respects this and doesn't break position:fixed
+    document.documentElement.style.overflow = 'hidden';
     const overlay = document.getElementById('modal-overlay');
     this._touchBlock = e => e.preventDefault();
     overlay.addEventListener('touchmove', this._touchBlock, { passive: false });
@@ -4517,7 +4515,8 @@ const Modal = {
   close() {
     document.getElementById('modal-overlay').classList.remove('active');
     document.getElementById('modal').classList.remove('active');
-    document.getElementById('screen-app')?.classList.remove('scroll-locked');
+    document.documentElement.style.overflow = '';
+    window.scrollTo(0, this._scrollY);
     const overlay = document.getElementById('modal-overlay');
     if (this._touchBlock) { overlay.removeEventListener('touchmove', this._touchBlock); this._touchBlock = null; }
   },
