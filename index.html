@@ -400,6 +400,7 @@ h1, h2, h3 {
   padding: var(--space-4) var(--space-5) calc(56px + env(safe-area-inset-bottom) + var(--space-5));
   width: 100%;
   flex: 1;
+  overflow-x: hidden;
 }
 
 .page { display: none; }
@@ -3282,7 +3283,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 94 · Jun 22, 2026</div>
+          <div class="app-version">Version 95 · Jun 22, 2026</div>
         </div>
       </div>
     </section>
@@ -4616,7 +4617,6 @@ const PAGE_TITLES = {
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
-  window.scrollTo(0, 0);
   // Update nav active state — settings/insights both light up the "More" button
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.id === 'nav-more-btn') {
@@ -4639,6 +4639,8 @@ function showPage(name) {
   }
   if (name === 'calendar') Calendar.render();
   if (name === 'insights') Insights.render();
+  // Scroll AFTER render so page height is stable (avoids iOS fixed-element glitch)
+  window.scrollTo(0, 0);
 }
 
 function resetLoginUI() {
