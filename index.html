@@ -720,7 +720,7 @@ h1, h2, h3 {
 
 .bottom-nav {
   position: fixed;
-  bottom: 0;
+  bottom: calc(env(safe-area-inset-bottom) + 8px);
   left: 0;
   right: 0;
   z-index: 80;
@@ -729,14 +729,13 @@ h1, h2, h3 {
   align-items: center;
   max-width: 440px;
   margin: 0 auto;
-  padding: 0 6px env(safe-area-inset-bottom);
+  padding: 0 6px;
   background: var(--nav-glass-bg);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid var(--nav-glass-border);
-  border-bottom: none;
-  border-radius: 28px 28px 0 0;
-  box-shadow: 0 -4px 24px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.07);
+  border-radius: 28px;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.45), 0 4px 12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.07);
 }
 .nav-item {
   flex: 1;
@@ -3283,7 +3282,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 93 · Jun 22, 2026</div>
+          <div class="app-version">Version 94 · Jun 22, 2026</div>
         </div>
       </div>
     </section>
@@ -4617,9 +4616,7 @@ const PAGE_TITLES = {
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
-  // Scroll the inner content container back to top on page change
-  const scroller = document.querySelector('.app-content');
-  if (scroller) scroller.scrollTop = 0;
+  window.scrollTo(0, 0);
   // Update nav active state — settings/insights both light up the "More" button
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.id === 'nav-more-btn') {
