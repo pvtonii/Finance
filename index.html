@@ -258,6 +258,17 @@ h1, h2, h3 {
   flex-direction: column;
   min-height: 100svh;
 }
+/* Calendar page: constrain layout so body never scrolls (prevents fixed nav from moving) */
+#screen-app[data-page="calendar"] {
+  height: 100dvh;
+}
+#screen-app[data-page="calendar"] .app-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
 
 .app-header {
   display: flex;
@@ -3282,7 +3293,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 107 · Jun 22, 2026</div>
+          <div class="app-version">Version 108 · Jun 22, 2026</div>
         </div>
       </div>
     </section>
@@ -4616,6 +4627,7 @@ const PAGE_TITLES = {
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
+  document.getElementById('screen-app').dataset.page = name;
   window.scrollTo(0, 0);
   // Update nav active state — settings/insights both light up the "More" button
   document.querySelectorAll('.nav-item').forEach(n => {
