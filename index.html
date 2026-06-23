@@ -3290,7 +3290,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 104 · Jun 22, 2026</div>
+          <div class="app-version">Version 105 · Jun 22, 2026</div>
         </div>
       </div>
     </section>
@@ -4731,8 +4731,10 @@ async function tryLogin() {
    ============================================ */
 async function enterApp() {
   showScreen('app');
-  // iOS PWA restores previous scroll position after launch — reset it after it settles
+  // iOS PWA restores previous scroll on launch — reset body AND inner container
   const resetScroll = () => {
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
     const c = document.querySelector('.app-content');
     if (c) c.scrollTop = 0;
   };
