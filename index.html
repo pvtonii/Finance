@@ -87,7 +87,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { min-height: 100%; background: var(--bg-primary); }
+html { min-height: 100%; }
 body {
   font-family: var(--font-body);
   background: var(--bg-primary);
@@ -258,9 +258,13 @@ h1, h2, h3 {
   flex-direction: column;
   min-height: 100svh;
 }
-/* Calendar page: cap .app-content height so body never overflows → nav stays fixed */
+/* Calendar page: constrain layout so body never scrolls (prevents fixed nav from moving) */
+#screen-app[data-page="calendar"] {
+  height: 100dvh;
+}
 #screen-app[data-page="calendar"] .app-content {
-  max-height: calc(100svh - 80px - env(safe-area-inset-top));
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
@@ -3289,7 +3293,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 109 · Jun 23, 2026</div>
+          <div class="app-version">Version 110 · Jun 23, 2026</div>
         </div>
       </div>
     </section>
