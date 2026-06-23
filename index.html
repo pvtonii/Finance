@@ -87,7 +87,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { height: 100%; }
+html { height: 100%; overscroll-behavior: none; }
 body {
   font-family: var(--font-body);
   background: var(--bg-primary);
@@ -98,6 +98,7 @@ body {
   line-height: 1.5;
   margin: 0;
   height: 100%;
+  overscroll-behavior: none;
 }
 
 button, input, select, textarea { font-family: inherit; color: inherit; font-size: 1rem; }
@@ -3287,7 +3288,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 98 · Jun 22, 2026</div>
+          <div class="app-version">Version 99 · Jun 22, 2026</div>
         </div>
       </div>
     </section>
@@ -4728,6 +4729,7 @@ async function tryLogin() {
    ============================================ */
 async function enterApp() {
   showScreen('app');
+  window.scrollTo(0, 0);
   App.renderUserBadge();
 
   if (!Connection.isConfigured()) {
