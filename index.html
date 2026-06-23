@@ -87,7 +87,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { height: 100%; }
+html { min-height: 100%; }
 body {
   font-family: var(--font-body);
   background: var(--bg-primary);
@@ -97,8 +97,6 @@ body {
   letter-spacing: -0.01em;
   line-height: 1.5;
   margin: 0;
-  height: 100%;
-  overscroll-behavior: none;
 }
 
 button, input, select, textarea { font-family: inherit; color: inherit; font-size: 1rem; }
@@ -258,7 +256,7 @@ h1, h2, h3 {
 #screen-app.active {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  min-height: 100svh;
 }
 
 .app-header {
@@ -399,14 +397,9 @@ h1, h2, h3 {
 .app-content {
   max-width: 480px;
   margin: 0 auto;
-  padding: var(--space-4) var(--space-5) calc(80px + env(safe-area-inset-bottom));
+  padding: var(--space-4) var(--space-5) calc(56px + env(safe-area-inset-bottom) + var(--space-5));
   width: 100%;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
+  flex: 1;
 }
 
 .page { display: none; }
@@ -734,6 +727,8 @@ h1, h2, h3 {
   display: flex;
   justify-content: space-around;
   align-items: center;
+  max-width: 440px;
+  margin: 0 auto;
   padding: 0 6px;
   background: var(--nav-glass-bg);
   backdrop-filter: blur(24px) saturate(180%);
@@ -3287,7 +3282,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 106 · Jun 22, 2026</div>
+          <div class="app-version">Version 107 · Jun 22, 2026</div>
         </div>
       </div>
     </section>
@@ -4621,6 +4616,7 @@ const PAGE_TITLES = {
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
+  window.scrollTo(0, 0);
   // Update nav active state — settings/insights both light up the "More" button
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.id === 'nav-more-btn') {
@@ -4643,8 +4639,6 @@ function showPage(name) {
   }
   if (name === 'calendar') Calendar.render();
   if (name === 'insights') Insights.render();
-  const scroller = document.querySelector('.app-content');
-  if (scroller) scroller.scrollTop = 0;
 }
 
 function resetLoginUI() {
@@ -4728,16 +4722,6 @@ async function tryLogin() {
    ============================================ */
 async function enterApp() {
   showScreen('app');
-  // iOS PWA restores previous scroll on launch — reset body AND inner container
-  const resetScroll = () => {
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-    const c = document.querySelector('.app-content');
-    if (c) c.scrollTop = 0;
-  };
-  resetScroll();
-  setTimeout(resetScroll, 100);
-  setTimeout(resetScroll, 400);
   App.renderUserBadge();
 
   if (!Connection.isConfigured()) {
