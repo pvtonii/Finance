@@ -3089,7 +3089,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v126</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v128</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3135,6 +3135,7 @@ html { scroll-behavior: smooth; }
         <div class="dash-card highlight fade-in" id="dash-projected" style="cursor:pointer;" title="Tap for breakdown">
           <div class="dash-card-label">End of month</div>
           <div class="dash-card-value text-mono" id="dash-projected-value">$0.00</div>
+          <div id="dash-projected-early" style="display:none;font-size:0.625rem;color:#f59e0b;margin-top:3px;font-weight:500;"></div>
           <div class="dash-card-sub" id="dash-projected-sub">projected · tap for details</div>
         </div>
       </div>
@@ -8614,6 +8615,18 @@ const Dashboard = {
     projEl.classList.remove('text-danger', 'text-success');
     if (projected < 0) projEl.classList.add('text-danger');
 
+    // Early next month amber line
+    const earlyNext = this.calcEarlyNextMonth();
+    const earlyEl = document.getElementById('dash-projected-early');
+    if (earlyEl) {
+      if (earlyNext.total > 0) {
+        earlyEl.style.display = '';
+        earlyEl.textContent = `+ ${App.formatCurrency(earlyNext.total)} · ${earlyNext.items.length} item${earlyNext.items.length !== 1 ? 's' : ''} early ${earlyNext.nextMonthName}`;
+      } else {
+        earlyEl.style.display = 'none';
+      }
+    }
+
     const cardsCount = State.cards.length;
     const detail = cardsCount === 0
       ? 'no cards'
@@ -8703,6 +8716,43 @@ const Dashboard = {
     });
   },
 
+  calcEarlyNextMonth() {
+    const nowRef = new Date();
+    const nowYear = nowRef.getFullYear(), nowMonth = nowRef.getMonth();
+    const nextRef = new Date(nowYear, nowMonth + 1, 1);
+    const nextYear = nextRef.getFullYear(), nextMonth = nextRef.getMonth();
+    const nextMonthName = nextRef.toLocaleString('en-US', { month: 'short' });
+    const nextYm = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}`;
+    const CUTOFF = 5;
+    const items = [];
+
+    State.cards.forEach(card => {
+      const m = Invoice.getNextUnpaidInvoice(card.id);
+      if (!m) return;
+      const [y, mo] = m.split('-').map(Number);
+      const dueDate = new Date(y, mo - 1, Number(card.due_day));
+      if (dueDate.getFullYear() !== nextYear || dueDate.getMonth() !== nextMonth) return;
+      if (dueDate.getDate() > CUTOFF) return;
+      const amount = Math.max(0, Invoice.getInvoiceTotal(card.id, m) - Invoice.getInvoicePaid(card.id, m));
+      if (!amount) return;
+      items.push({ name: card.name, amount, due: dueDate.getDate(), kind: 'card' });
+    });
+
+    State.subscriptions.forEach(s => {
+      if (!s.is_active || s.type === 'income') return;
+      const amount = Number(s.amount) || 0;
+      if (!amount) return;
+      const day = Number(s.billing_day);
+      if (!day || day > CUTOFF) return;
+      if (s.last_confirmed_month?.startsWith(nextYm)) return;
+      items.push({ name: s.name, amount, due: day, kind: 'recurring' });
+    });
+
+    items.sort((a, b) => a.due - b.due);
+    const total = items.reduce((s, x) => s + x.amount, 0);
+    return { items, total, nextMonthName };
+  },
+
   showProjectedBreakdown() {
     const nowRef = new Date();
     const nowYear = nowRef.getFullYear(), nowMonth = nowRef.getMonth();
@@ -8771,6 +8821,32 @@ const Dashboard = {
     };
 
     const divider = `<div style="border-top:2px solid var(--border);margin:10px 0;"></div>`;
+    const earlyNext = this.calcEarlyNextMonth();
+    const totalProjected = projected - earlyNext.total;
+
+    const earlySection = earlyNext.total > 0 ? `
+      <div style="border-top:1px solid var(--border-subtle);margin:10px 0 6px;"></div>
+      <div style="font-size:0.6875rem;color:#f59e0b;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;padding:4px 0 2px;">Due early ${earlyNext.nextMonthName} · days 1–5</div>
+      <div style="font-size:0.75rem;color:var(--text-tertiary);padding-bottom:8px;">Bills and invoices due at the start of next month</div>
+      ${earlyNext.items.map(item => `
+        <div style="display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border-subtle);">
+          <div>
+            <span style="font-size:0.8125rem;color:var(--text-secondary);">${escapeHtml(item.name)}${item.kind === 'card' ? ' · invoice' : ''}</span>
+            <span style="font-size:0.6875rem;color:var(--text-tertiary);margin-left:6px;">day ${item.due}</span>
+          </div>
+          <span class="text-mono" style="font-size:0.8125rem;color:#f59e0b;">−${App.formatCurrency(item.amount)}</span>
+        </div>`).join('')}
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0 2px;">
+        <span style="font-size:0.8125rem;color:#f59e0b;font-weight:600;">Total early ${earlyNext.nextMonthName}</span>
+        <span class="text-mono" style="font-size:0.875rem;font-weight:600;color:#f59e0b;">−${App.formatCurrency(earlyNext.total)}</span>
+      </div>
+      <div style="border-top:3px solid var(--border);margin:8px 0;"></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;">
+        <span style="font-weight:600;">Total projetado</span>
+        <span class="text-mono ${totalProjected >= 0 ? 'text-success' : 'text-danger'}" style="font-size:1.125rem;font-weight:700;">${App.formatCurrency(totalProjected)}</span>
+      </div>
+      <div style="text-align:right;font-size:0.6875rem;color:var(--text-tertiary);padding-top:2px;">end of month + early ${earlyNext.nextMonthName}</div>
+    ` : '';
 
     const body = `
       <div style="padding-bottom:var(--space-2);">
@@ -8784,6 +8860,7 @@ const Dashboard = {
           <span style="font-weight:600;">End of month</span>
           <span class="text-mono ${projected >= 0 ? 'text-success' : 'text-danger'}" style="font-size:1.125rem;font-weight:700;">${App.formatCurrency(projected)}</span>
         </div>
+        ${earlySection}
       </div>`;
 
     Modal.open('Projection breakdown', body);
