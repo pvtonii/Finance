@@ -1668,39 +1668,37 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
 
 .toast {
   position: fixed;
-  top: calc(env(safe-area-inset-top) + var(--space-2));
+  top: calc(env(safe-area-inset-top) + 12px);
   left: 50%;
-  transform: translateX(-50%) translateY(-12px);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--border-default);
-  font-size: 0.875rem;
+  transform: translateX(-50%) translateY(-8px) scale(0.85);
+  background: #1c1c1e;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(255,255,255,0.12);
+  font-size: 0.8125rem;
   font-weight: 500;
   z-index: 300;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 220ms var(--ease), transform 280ms var(--ease-out);
-  box-shadow: var(--shadow-lg);
-  width: min(400px, calc(100vw - 32px));
+  transition: opacity 180ms ease, transform 320ms cubic-bezier(0.34,1.56,0.64,1);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5), 0 1px 4px rgba(0,0,0,0.3);
+  white-space: nowrap;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
 }
 .toast.visible {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: translateX(-50%) translateY(0) scale(1);
 }
 .toast-dot {
   width: 7px; height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 }
-.toast.success { border-left: 3px solid var(--success); }
-.toast.success .toast-dot { background: var(--success); }
-.toast.error   { border-left: 3px solid var(--danger); }
-.toast.error   .toast-dot { background: var(--danger); }
+.toast.success .toast-dot { background: #22c55e; }
+.toast.error   .toast-dot { background: #ef4444; }
 
 .loading {
   display: inline-block;
@@ -3125,7 +3123,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v134</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v135</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -9502,7 +9500,7 @@ document.addEventListener('click', (e) => {
   }
 
   const editTx = e.target.closest('[data-edit-tx]');
-  if (editTx && editTx.dataset.swiped) { return; } // row is swiped open — ignore tap
+  if (editTx && editTx.style.transform) { return; } // row is swiped — transform means reveal is open
   if (editTx) {
     const id = editTx.dataset.editTx;
     let t = State.transactions.find(x => x.id === id);
