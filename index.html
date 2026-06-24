@@ -253,15 +253,13 @@ h1, h2, h3 {
 #screen-app.active {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  overflow: hidden;
+  min-height: 100svh;
 }
-.app-content {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior-y: contain;
+/* Calendar page: constrain layout */
+#screen-app[data-page="calendar"] { height: 100dvh; }
+#screen-app[data-page="calendar"] .app-content {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
 }
 
 .app-header {
@@ -404,6 +402,7 @@ h1, h2, h3 {
   margin: 0 auto;
   padding: var(--space-4) var(--space-5) calc(60px + env(safe-area-inset-bottom) + 20px + var(--space-5));
   width: 100%;
+  flex: 1;
 }
 
 .page { display: none; }
@@ -3126,7 +3125,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v133</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v134</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -4699,7 +4698,7 @@ function showPage(name) {
 
   _currentPage = name;
   document.getElementById('screen-app').dataset.page = name;
-  document.querySelector('.app-content')?.scrollTo(0, 0);
+  window.scrollTo(0, 0);
   // Update nav active state — settings/insights both light up the "More" button
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.id === 'nav-more-btn') {
