@@ -104,8 +104,8 @@ input, select, textarea { background: none; border: none; outline: none; }
 
 h1, h2, h3 {
   font-family: var(--font-display);
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-weight: 700;
+  letter-spacing: -0.025em;
   line-height: 1.1;
 }
 .text-display { font-family: var(--font-display); letter-spacing: -0.02em; }
@@ -411,9 +411,15 @@ h1, h2, h3 {
 }
 
 .page { display: none; }
-.page.active {
-  display: block;
-}
+.page.active { display: block; }
+.page.slide-in-right  { animation: slideInRight  280ms cubic-bezier(0.32,0.72,0,1) forwards; }
+.page.slide-in-left   { animation: slideInLeft   280ms cubic-bezier(0.32,0.72,0,1) forwards; }
+.page.slide-out-left  { animation: slideOutLeft  280ms cubic-bezier(0.32,0.72,0,1) forwards; display: block !important; }
+.page.slide-out-right { animation: slideOutRight 280ms cubic-bezier(0.32,0.72,0,1) forwards; display: block !important; }
+@keyframes slideInRight  { from { transform: translateX(40px);  opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes slideInLeft   { from { transform: translateX(-40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes slideOutLeft  { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-40px); opacity: 0; } }
+@keyframes slideOutRight { from { transform: translateX(0); opacity: 1; } to { transform: translateX(40px);  opacity: 0; } }
 
 .card {
   background: var(--bg-secondary);
@@ -1671,32 +1677,37 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
 
 .toast {
   position: fixed;
-  top: calc(env(safe-area-inset-top) + var(--space-2));
+  top: calc(env(safe-area-inset-top) + 12px);
   left: 50%;
-  transform: translateX(-50%) translateY(-12px);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--border-default);
-  font-size: 0.875rem;
+  transform: translateX(-50%) translateY(-8px) scale(0.85);
+  background: #1c1c1e;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(255,255,255,0.12);
+  font-size: 0.8125rem;
   font-weight: 500;
   z-index: 300;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 220ms var(--ease), transform 280ms var(--ease-out);
-  box-shadow: var(--shadow-lg);
-  width: min(400px, calc(100vw - 32px));
+  transition: opacity 180ms ease, transform 320ms cubic-bezier(0.34,1.56,0.64,1);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5), 0 1px 4px rgba(0,0,0,0.3);
+  white-space: nowrap;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
 }
 .toast.visible {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: translateX(-50%) translateY(0) scale(1);
 }
-.toast.success { border-left: 3px solid var(--success); }
-.toast.error   { border-left: 3px solid var(--danger); }
+.toast-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.toast.success .toast-dot { background: #22c55e; }
+.toast.error   .toast-dot { background: #ef4444; }
 
 .loading {
   display: inline-block;
@@ -1982,8 +1993,12 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 0 var(--space-1);
-  margin-bottom: var(--space-2);
+  padding: 6px var(--space-1) var(--space-2);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg-primary);
+  margin-bottom: 0;
 }
 .day-label {
   font-family: var(--font-display);
@@ -2588,7 +2603,7 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
 .dash-card-value {
   font-family: var(--font-display);
   font-size: 1.125rem;
-  font-weight: 500;
+  font-weight: 200;
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   margin-bottom: 2px;
@@ -3117,7 +3132,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v130</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v131</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -4554,22 +4569,19 @@ const App = {
    ============================================ */
 function toast(msg, type = 'success', action = null) {
   const t = document.getElementById('toast');
+  const dot = `<span class="toast-dot"></span>`;
 
   if (action) {
-    t.innerHTML = `<span style="flex:1;">${escapeHtml(msg)}</span><span class="toast-action">${escapeHtml(action.label)}</span>`;
+    t.innerHTML = `${dot}<span style="flex:1;">${escapeHtml(msg)}</span><span class="toast-action">${escapeHtml(action.label)}</span>`;
     t.classList.add('with-action');
-    t.onclick = () => {
-      t.classList.remove('visible');
-      action.onClick();
-    };
+    t.onclick = () => { t.classList.remove('visible', 'with-action'); action.onClick(); };
   } else {
-    t.innerHTML = `<span>${escapeHtml(msg)}</span>`;
+    t.innerHTML = `${dot}<span>${escapeHtml(msg)}</span>`;
     t.classList.remove('with-action');
     t.onclick = null;
   }
 
   t.className = `toast visible ${type}${action ? ' with-action' : ''}`;
-  // Toast com ação fica mais tempo
   const duration = action ? 5000 : 2500;
   clearTimeout(t._timer);
   t._timer = setTimeout(() => {
@@ -4657,9 +4669,47 @@ const PAGE_TITLES = {
   settings: 'Settings',
 };
 
+/* Animated number counter — easeOutExpo */
+function animCounter(el, value, prefix = '', suffix = '') {
+  const duration = 600;
+  const start = performance.now();
+  const absVal = Math.abs(value);
+  function step(now) {
+    const t = Math.min(1, (now - start) / duration);
+    const ease = t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+    const cur = absVal * ease;
+    el.textContent = prefix + (value < 0 ? '-' : '') + App.formatCurrency(cur) + suffix;
+    if (t < 1) requestAnimationFrame(step);
+    else el.textContent = prefix + App.formatCurrency(value) + suffix;
+  }
+  requestAnimationFrame(step);
+}
+
+const PAGE_ORDER = ['dashboard','transactions','cards','calendar','settings','insights'];
+let _currentPage = 'dashboard';
+
 function showPage(name) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-' + name).classList.add('active');
+  const prev = document.getElementById('page-' + _currentPage);
+  const next = document.getElementById('page-' + name);
+  const prevIdx = PAGE_ORDER.indexOf(_currentPage);
+  const nextIdx = PAGE_ORDER.indexOf(name);
+  const goRight = nextIdx > prevIdx;
+
+  if (prev && prev !== next && _currentPage !== name) {
+    prev.classList.add(goRight ? 'slide-out-left' : 'slide-out-right');
+    prev.addEventListener('animationend', () => {
+      prev.classList.remove('active','slide-out-left','slide-out-right');
+    }, { once: true });
+    next.classList.add('active', goRight ? 'slide-in-right' : 'slide-in-left');
+    next.addEventListener('animationend', () => {
+      next.classList.remove('slide-in-right','slide-in-left');
+    }, { once: true });
+  } else {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    next.classList.add('active');
+  }
+
+  _currentPage = name;
   document.getElementById('screen-app').dataset.page = name;
   window.scrollTo(0, 0);
   // Update nav active state — settings/insights both light up the "More" button
@@ -8631,15 +8681,15 @@ const Dashboard = {
         ownerFilter = 'non-savings';
       }
       document.getElementById('dash-today-label').textContent = label;
-      valEl.textContent = App.formatCurrency(displayBalance);
+      animCounter(valEl, displayBalance);
       if (split) split.style.display = '';
       const byOwner = this.calcByOwner(ownerFilter);
       document.getElementById('dash-pv-balance').textContent = App.formatCurrency(byOwner.pv);
       document.getElementById('dash-gigi-balance').textContent = App.formatCurrency(byOwner.gigi);
     }
 
-    document.getElementById('dash-due-value').textContent = '-' + App.formatCurrency(cardsDue);
-    document.getElementById('dash-projected-value').textContent = App.formatCurrency(projected);
+    animCounter(document.getElementById('dash-due-value'), -cardsDue);
+    animCounter(document.getElementById('dash-projected-value'), projected);
 
     // Cor do "fim do mês"
     const projEl = document.getElementById('dash-projected-value');
@@ -8665,8 +8715,8 @@ const Dashboard = {
     document.getElementById('dash-due-sub').textContent = detail;
 
     // Movimentação do mês
-    document.getElementById('dash-income').textContent = '+' + App.formatCurrency(monthStats.income);
-    document.getElementById('dash-expense').textContent = '-' + App.formatCurrency(monthStats.expense);
+    animCounter(document.getElementById('dash-income'), monthStats.income, '+');
+    animCounter(document.getElementById('dash-expense'), -monthStats.expense);
 
     // Cards due this month OR in the first 15 days of next month
     const nextMonthRef = new Date(nowYear, nowMonth + 1, 1);
