@@ -818,29 +818,15 @@ h1, h2, h3 {
   border-top: 1px solid var(--border-subtle);
   z-index: 130;
   transition: transform 300ms var(--ease-out);
-  max-height: 90vh;
+  max-height: 92vh;
   display: flex;
   flex-direction: column;
-  padding-bottom: env(safe-area-inset-bottom);
 }
 @media (min-width: 768px) {
   .modal { max-width: 520px; }
 }
 .modal.active {
   transform: translateX(-50%) translateY(0);
-}
-/* Full-screen sheet variant — for complex forms like New Transaction */
-.modal.modal-sheet {
-  max-height: 100dvh;
-  height: 100dvh;
-  border-top-left-radius: var(--radius-md);
-  border-top-right-radius: var(--radius-md);
-  padding-top: env(safe-area-inset-top);
-}
-.modal.modal-sheet .modal-header::before { display: none; }
-.modal.modal-sheet .modal-header {
-  padding-top: var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .modal-header {
@@ -889,10 +875,11 @@ h1, h2, h3 {
 .modal-close svg { width: 16px; height: 16px; }
 
 .modal-body {
-  padding: var(--space-3) var(--space-5) var(--space-5);
+  padding: var(--space-3) var(--space-5) calc(var(--space-5) + env(safe-area-inset-bottom));
   overflow-y: auto;
   overflow-x: hidden;
   flex: 1;
+  min-height: 0;
   scrollbar-gutter: stable;
   overscroll-behavior: contain;
 }
@@ -3138,7 +3125,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v144</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v145</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -6229,7 +6216,7 @@ function openTransactionForm(transaction = null) {
       ${isEdit ? `<button class="btn btn-secondary" id="tx-duplicate" style="width:auto;padding:0 var(--space-4);flex-shrink:0;">⧉ Dup</button>` : ''}
       <button class="btn btn-primary" id="tx-save" style="flex:1;width:auto;">${isEdit ? 'Save' : 'Add'}</button>
     </div>
-  `, { sheet: true });
+  `);
 
   // Estado interno do form
   let selectedType = t.type;
