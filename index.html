@@ -3216,7 +3216,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v156</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v157</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -8192,10 +8192,9 @@ const Calendar = {
     });
 
     // 2. Subscriptions / Recurring (expense + income)
-    State.subscriptions.filter(s => s.is_active !== false).forEach(s => {
+    State.subscriptions.filter(s => s.is_active !== false && !s.card_id).forEach(s => {
       const isIncome = s.type === 'income';
-      const isCardSub = !!s.card_id;
-      const eventColor = isIncome ? 'income' : (isCardSub ? 'subscription' : 'expense');
+      const eventColor = isIncome ? 'income' : 'expense';
 
       if (s.billing_frequency === 'quinzenal' && s.billing_start_date) {
         // Show all 14-day occurrences in this month
