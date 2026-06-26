@@ -3215,7 +3215,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v151</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v152</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -8319,15 +8319,17 @@ const Calendar = {
     const calEvents = this.computeEvents(year, month - 1)[dateStr] || [];
     const colorLabels = { due: 'Card due', closing: 'Card closing', income: 'Recurring income', subscription: 'Subscription', expense: 'Recurring bill' };
     const dotColors = { due: '#ff453a', closing: '#ff9f0a', income: '#30d158', subscription: '#bf5af2', expense: '#3A86FF' };
+    const amtColors = { income: '#30d158', due: '#ff453a', expense: '#ff453a', subscription: '#ff453a', closing: '#ff9f0a' };
     const evtHtml = calEvents.map(e => {
-      const dot = `<span style="width:8px;height:8px;border-radius:50%;background:${dotColors[e.color]||'#888'};flex-shrink:0;display:inline-block;"></span>`;
-      const amtHtml = e.amount ? `<div class="cal-day-tx-amt" style="color:var(--text-secondary);">${App.formatCurrency(e.amount)}</div>` : '';
+      const dotColor = dotColors[e.color] || '#888';
+      const dot = `<span style="width:8px;height:8px;border-radius:50%;background:${dotColor};flex-shrink:0;display:inline-block;"></span>`;
+      const amtHtml = e.amount ? `<div class="cal-day-tx-amt" style="color:${amtColors[e.color] || 'var(--text-secondary)'};">${e.color === 'income' ? '+' : '−'}${App.formatCurrency(e.amount)}</div>` : '';
       return `
         <div class="cal-day-tx">
           <div class="cal-day-tx-icon event">${dot}</div>
           <div class="cal-day-tx-info">
             <div class="cal-day-tx-name">${escapeHtml(e.title)}</div>
-            <div class="cal-day-tx-sub">${colorLabels[e.color] || ''}</div>
+            <div class="cal-day-tx-sub" style="color:${dotColor};">${colorLabels[e.color] || ''}</div>
           </div>
           ${amtHtml}
         </div>`;
