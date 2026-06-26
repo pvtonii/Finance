@@ -274,19 +274,18 @@ h1, h2, h3 {
   flex: 1; min-height: 0;
   position: relative;
 }
-/* Fade indicator: shows when list has more content to scroll */
-#calendar-page-content::after {
-  content: '';
+/* Fade indicator: real div so JS can reliably show/hide it */
+.cal-scroll-fade {
   position: absolute;
   bottom: 0; left: 0; right: 0;
-  height: 72px;
+  height: 80px;
   background: linear-gradient(to bottom, transparent, var(--bg-primary));
   pointer-events: none;
-  z-index: 3;
+  z-index: 4;
   opacity: 0;
-  transition: opacity 200ms;
+  transition: opacity 180ms;
 }
-#calendar-page-content.has-more::after { opacity: 1; }
+.cal-scroll-fade.visible { opacity: 1; }
 
 .app-header {
   display: flex;
@@ -3229,7 +3228,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v153</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v154</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -8297,6 +8296,7 @@ const Calendar = {
         </div>
       </div>
       <div class="cal-day-panel" id="cal-day-panel"></div>
+      <div class="cal-scroll-fade" id="cal-scroll-fade"></div>
     `;
   },
 
@@ -8306,9 +8306,21 @@ const Calendar = {
     document.querySelectorAll('[data-cal-day]').forEach(el => {
       el.addEventListener('click', () => this.selectDay(el.dataset.calDay));
     });
-    // Block scroll when touching the calendar grid
+    // Block page scroll on grid (always) and panel (when no overflow)
     const grid = document.querySelector('.cal-grid-wrap');
     if (grid) grid.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+    const panel = document.getElementById('cal-day-panel');
+    if (panel) {
+      let _ty = 0;
+      panel.addEventListener('touchstart', e => { _ty = e.touches[0].clientY; }, { passive: true });
+      panel.addEventListener('touchmove', e => {
+        const dy = e.touches[0].clientY - _ty;
+        const noOverflow = panel.scrollHeight <= panel.clientHeight;
+        const atTop = panel.scrollTop <= 0 && dy > 0;
+        const atBottom = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 1 && dy < 0;
+        if (noOverflow || atTop || atBottom) e.preventDefault();
+      }, { passive: false });
+    }
     // Auto-select today if it's in the current month
     const todayStr = localToday();
     if (todayStr.startsWith(this.currentMonth)) this.selectDay(todayStr);
@@ -8359,16 +8371,18 @@ const Calendar = {
       ${!calEvents.length ? '<div class="cal-day-empty">No events</div>' : ''}
     `;
 
-    // Fade indicator: show when list overflows, hide when scrolled to bottom
-    const wrap = document.getElementById('calendar-page-content');
+    // Fade indicator
+    const fade = document.getElementById('cal-scroll-fade');
     const updateFade = () => {
+      if (!fade) return;
+      const canScroll = panel.scrollHeight > panel.clientHeight;
       const atBottom = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 4;
-      wrap?.classList.toggle('has-more', !atBottom && panel.scrollHeight > panel.clientHeight);
+      fade.classList.toggle('visible', canScroll && !atBottom);
     };
     panel.removeEventListener('scroll', panel._fadeHandler);
     panel._fadeHandler = updateFade;
     panel.addEventListener('scroll', updateFade, { passive: true });
-    updateFade();
+    requestAnimationFrame(updateFade);
   },
 };
 
