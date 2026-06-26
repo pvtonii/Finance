@@ -2854,6 +2854,84 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
   text-align: center;
 }
 
+/* Calendar grid sticky wrapper */
+.cal-grid-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-primary);
+  padding-bottom: var(--space-2);
+}
+/* iOS-style day detail panel */
+.cal-day-panel {
+  padding: var(--space-3) 0 calc(60px + env(safe-area-inset-bottom) + var(--space-5));
+}
+.cal-day-panel-header {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: var(--space-2) 0 var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: var(--space-2);
+}
+.cal-day-tx {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+.cal-day-tx:last-child { border-bottom: none; }
+.cal-day-tx-icon {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-full);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.cal-day-tx-icon.expense { background: rgba(255,69,58,0.15); }
+.cal-day-tx-icon.income  { background: rgba(48,209,88,0.15); }
+.cal-day-tx-icon.event   { background: var(--bg-tertiary); }
+.cal-day-tx-info { flex: 1; min-width: 0; }
+.cal-day-tx-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cal-day-tx-sub {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+.cal-day-tx-amt {
+  font-family: ui-rounded, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.cal-day-empty {
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+  padding: var(--space-6) 0;
+}
+/* Selected day highlight */
+.cal-cell.selected { border-color: transparent; background: var(--bg-tertiary); }
+.cal-cell.selected .cal-day-num {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto;
+}
+.cal-cell.today.selected { border-color: transparent; }
+.cal-cell.today.selected .cal-day-num { background: #0a84ff; color: white; }
+
 /* Day details modal */
 .cal-event-list {
   display: flex;
@@ -3122,7 +3200,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v147</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v148</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -4593,26 +4671,17 @@ const Modal = {
     document.getElementById('modal-overlay').classList.add('active');
     el.classList.toggle('modal-sheet', sheet);
     el.classList.add('active');
-    // Lock body scroll (iOS Safari requires position:fixed trick)
-    this._scrollY = window.scrollY;
-    document.body.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${this._scrollY}px`;
-    document.body.style.width = '100%';
+    // Lock background scroll without fixing body (body:fixed breaks iOS keyboard)
+    document.documentElement.style.overflow = 'hidden';
     const overlay = document.getElementById('modal-overlay');
-    this._touchBlock = e => e.preventDefault();
+    this._touchBlock = e => { if (!e.target.closest('.modal')) e.preventDefault(); };
     overlay.addEventListener('touchmove', this._touchBlock, { passive: false });
   },
   close() {
     document.getElementById('modal-overlay').classList.remove('active');
     const el = document.getElementById('modal');
     el.classList.remove('active', 'modal-sheet');
-    // Restore body scroll
-    document.body.style.overflow = '';
-    document.body.style.position = '';
-    document.body.style.top = '';
-    document.body.style.width = '';
-    window.scrollTo(0, this._scrollY);
+    document.documentElement.style.overflow = '';
     const overlay = document.getElementById('modal-overlay');
     if (this._touchBlock) { overlay.removeEventListener('touchmove', this._touchBlock); this._touchBlock = null; }
   },
@@ -8180,27 +8249,25 @@ const Calendar = {
     const totalEvents = Object.values(events).reduce((sum, arr) => sum + arr.length, 0);
 
     return `
-      <div class="cal-header">
-        <button class="cal-nav" data-cal-prev>‹</button>
-        <span class="cal-title">${monthName}</span>
-        <button class="cal-nav" data-cal-next>›</button>
+      <div class="cal-grid-wrap">
+        <div class="cal-header">
+          <button class="cal-nav" data-cal-prev>‹</button>
+          <span class="cal-title">${monthName}</span>
+          <button class="cal-nav" data-cal-next>›</button>
+        </div>
+        <div class="cal-weekdays">
+          ${weekdayHeaders.map(w => `<div class="cal-weekday">${w}</div>`).join('')}
+        </div>
+        <div class="cal-grid">${cellsHtml}</div>
+        <div class="cal-legend">
+          <div class="cal-legend-item"><span class="cal-dot due"></span> Due</div>
+          <div class="cal-legend-item"><span class="cal-dot closing"></span> Closes</div>
+          <div class="cal-legend-item"><span class="cal-dot income"></span> Income</div>
+          <div class="cal-legend-item"><span class="cal-dot subscription"></span> Sub</div>
+          <div class="cal-legend-item"><span class="cal-dot expense"></span> Bill</div>
+        </div>
       </div>
-
-      <div class="cal-weekdays">
-        ${weekdayHeaders.map(w => `<div class="cal-weekday">${w}</div>`).join('')}
-      </div>
-
-      <div class="cal-grid">${cellsHtml}</div>
-
-      <div class="cal-legend">
-        <div class="cal-legend-item"><span class="cal-dot due"></span> Due</div>
-        <div class="cal-legend-item"><span class="cal-dot closing"></span> Closes</div>
-        <div class="cal-legend-item"><span class="cal-dot income"></span> Income</div>
-        <div class="cal-legend-item"><span class="cal-dot subscription"></span> Sub</div>
-        <div class="cal-legend-item"><span class="cal-dot expense"></span> Bill</div>
-      </div>
-
-      <div class="cal-summary">${totalEvents} event${totalEvents === 1 ? '' : 's'} this month</div>
+      <div class="cal-day-panel" id="cal-day-panel"></div>
     `;
   },
 
@@ -8208,11 +8275,11 @@ const Calendar = {
     document.querySelector('[data-cal-prev]')?.addEventListener('click', () => this.navigate(-1));
     document.querySelector('[data-cal-next]')?.addEventListener('click', () => this.navigate(1));
     document.querySelectorAll('[data-cal-day]').forEach(el => {
-      el.addEventListener('click', () => {
-        if (!el.classList.contains('has-events')) return;
-        this.openDayDetails(el.dataset.calDay);
-      });
+      el.addEventListener('click', () => this.selectDay(el.dataset.calDay));
     });
+    // Auto-select today if it's in the current month
+    const todayStr = localToday();
+    if (todayStr.startsWith(this.currentMonth)) this.selectDay(todayStr);
   },
 
   navigate(direction) {
@@ -8222,49 +8289,66 @@ const Calendar = {
     this.render();
   },
 
-  openDayDetails(dateStr) {
+  selectDay(dateStr) {
+    // Highlight selected cell
+    document.querySelectorAll('.cal-cell.selected').forEach(el => el.classList.remove('selected'));
+    const cell = document.querySelector(`[data-cal-day="${dateStr}"]`);
+    if (cell) cell.classList.add('selected');
+
+    const panel = document.getElementById('cal-day-panel');
+    if (!panel) return;
+
     const [year, month, day] = dateStr.split('-').map(n => parseInt(n, 10));
-    const events = this.computeEvents(year, month - 1)[dateStr] || [];
-    if (!events.length) return;
-
     const dateObj = new Date(year, month - 1, day);
-    const dateTitle = dateObj.toLocaleDateString(undefined, {
-      weekday: 'long', month: 'long', day: 'numeric',
-    });
+    const dateTitle = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-    const colorLabels = {
-      due: 'Card due',
-      closing: 'Card closing',
-      income: 'Recurring income',
-      subscription: 'Subscription',
-      expense: 'Recurring bill',
-    };
-
-    const eventsHtml = events.map(e => {
-      const ownerAvatar = e.ownerAvatar
-        ? `<span class="inline-avatar ${e.ownerAvatar}" style="width:14px;height:14px;font-size:0.5625rem;">${e.ownerAvatar === 'pv' ? 'P' : e.ownerAvatar === 'gigi' ? 'G' : 'S'}</span>`
-        : '';
-      const amountHtml = e.amount != null
-        ? `<span class="cal-event-amount">${App.formatCurrency(e.amount)}</span>`
-        : '';
+    // Real transactions for this date
+    const txs = State.transactions.filter(t => t.date === dateStr && !t.is_transfer);
+    const txHtml = txs.map(t => {
+      const cat = State.categories.find(c => c.id === t.category_id);
+      const icon = cat?.icon || (t.type === 'income' ? '↑' : '↓');
+      const cls = t.type === 'income' ? 'income' : 'expense';
+      const sign = t.type === 'income' ? '+' : '−';
+      const owner = t.owner ? `<span class="inline-avatar ${t.owner}" style="width:12px;height:12px;font-size:0.4375rem;">${t.owner === 'pv' ? 'P' : 'G'}</span>` : '';
       return `
-        <div class="cal-event-row">
-          <span class="cal-dot ${e.color}" style="margin-right:8px;"></span>
-          <div class="cal-event-info">
-            <div class="cal-event-title">${escapeHtml(e.title)} ${ownerAvatar}</div>
-            <div class="cal-event-type">${colorLabels[e.color] || e.color}</div>
+        <div class="cal-day-tx" data-edit-tx="${t.id}">
+          <div class="cal-day-tx-icon ${cls}">${icon}</div>
+          <div class="cal-day-tx-info">
+            <div class="cal-day-tx-name">${escapeHtml(t.description || 'Transaction')} ${owner}</div>
+            <div class="cal-day-tx-sub">${cat?.name || (t.type === 'income' ? 'Income' : 'Expense')}</div>
           </div>
-          ${amountHtml}
-        </div>
-      `;
+          <div class="cal-day-tx-amt ${cls === 'income' ? 'text-success' : 'text-danger'}">${sign}${App.formatCurrency(t.amount)}</div>
+        </div>`;
     }).join('');
 
-    Modal.open(dateTitle, `
-      <div class="cal-event-list">${eventsHtml}</div>
-      <div style="margin-top: var(--space-5);">
-        <button class="btn btn-primary" onclick="Modal.close()">Close</button>
-      </div>
-    `);
+    // Scheduled events for this date
+    const calEvents = this.computeEvents(year, month - 1)[dateStr] || [];
+    const colorLabels = { due: 'Card due', closing: 'Card closing', income: 'Recurring income', subscription: 'Subscription', expense: 'Recurring bill' };
+    const dotColors = { due: '#ff453a', closing: '#ff9f0a', income: '#30d158', subscription: '#bf5af2', expense: '#3A86FF' };
+    const evtHtml = calEvents.map(e => {
+      const dot = `<span style="width:8px;height:8px;border-radius:50%;background:${dotColors[e.color]||'#888'};flex-shrink:0;display:inline-block;"></span>`;
+      const amtHtml = e.amount ? `<div class="cal-day-tx-amt" style="color:var(--text-secondary);">${App.formatCurrency(e.amount)}</div>` : '';
+      return `
+        <div class="cal-day-tx" style="cursor:default;">
+          <div class="cal-day-tx-icon event">${dot}</div>
+          <div class="cal-day-tx-info">
+            <div class="cal-day-tx-name">${escapeHtml(e.title)}</div>
+            <div class="cal-day-tx-sub">${colorLabels[e.color] || ''}</div>
+          </div>
+          ${amtHtml}
+        </div>`;
+    }).join('');
+
+    const hasAnything = txs.length || calEvents.length;
+    panel.innerHTML = `
+      <div class="cal-day-panel-header">${dateTitle}</div>
+      ${txHtml}
+      ${evtHtml}
+      ${!hasAnything ? '<div class="cal-day-empty">No transactions or events</div>' : ''}
+    `;
+
+    // Scroll panel into view smoothly
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   },
 };
 
