@@ -1866,6 +1866,9 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
   color: var(--bg-primary);
 }
 .best-to-use-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: var(--space-3);
 }
 .best-to-use-title {
@@ -1874,6 +1877,55 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
   color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+.best-store-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+  padding: 2px;
+}
+.best-store-tab {
+  font-size: 0.625rem;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--duration);
+  white-space: nowrap;
+}
+.best-store-tab.active {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+}
+/* Costco tab content */
+.best-costco-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.best-costco-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+.best-costco-pick.winner {
+  background: rgba(48,209,88,0.10);
+  border: 1px solid rgba(48,209,88,0.25);
+}
+.best-costco-pick.loser {
+  opacity: 0.5;
+}
+.best-costco-label {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-top: 1px;
 }
 .best-card {
   display: flex;
@@ -3216,7 +3268,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v158</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v159</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -8368,6 +8420,7 @@ const Cards = {
   selectedCardId: null,
   selectedInvoiceMonth: null,
   filterOwner: 'all', // 'all' | 'pv' | 'gigi'
+  bestTab: 'general',  // 'general' | 'costco'
 
   render() {
     const container = document.getElementById('cards-page-content');
@@ -8404,14 +8457,20 @@ const Cards = {
     });
     const top3 = allRankings.slice(0, 3);
     const medals = ['🥇', '🥈', '🥉'];
+    const bestTab = this.bestTab;
     const bestToUseHtml = top3.length > 1 ? `
       <div class="best-to-use-section">
         <div class="best-to-use-header">
           <span class="best-to-use-title">Best to use today</span>
+          <div class="best-store-tabs">
+            <button class="best-store-tab ${bestTab === 'general' ? 'active' : ''}" data-best-tab="general">General</button>
+            <button class="best-store-tab ${bestTab === 'costco' ? 'active' : ''}" data-best-tab="costco">Costco</button>
+          </div>
         </div>
-        <div class="best-to-use-list">
-          ${top3.map((r, idx) => this.renderBestCard(r, medals[idx])).join('')}
-        </div>
+        ${bestTab === 'costco'
+          ? this.renderBestCostco(allRankings)
+          : `<div class="best-to-use-list">${top3.map((r, idx) => this.renderBestCard(r, medals[idx])).join('')}</div>`
+        }
       </div>
     ` : '';
 
@@ -8534,6 +8593,43 @@ const Cards = {
         </div>
       </div>
     `;
+  },
+
+  renderBestCostco(allRankings) {
+    // Only Amazon Visa cards (Costco only accepts Visa)
+    const amazon = allRankings.filter(r => r.card.name.toLowerCase().includes('amazon'));
+    if (!amazon.length) return `<div class="best-day-empty" style="padding:var(--space-3) 0;color:var(--text-tertiary);font-size:0.875rem;">No Amazon Visa cards found</div>`;
+
+    // Sort best first (same logic as general ranking)
+    amazon.sort((a, b) => {
+      if (a.hasNoCredit && !b.hasNoCredit) return 1;
+      if (!a.hasNoCredit && b.hasNoCredit) return -1;
+      const aDays = a.state === 'ambiguous' ? a.ambiguousRange.min : a.daysToDue;
+      const bDays = b.state === 'ambiguous' ? b.ambiguousRange.min : b.daysToDue;
+      return bDays - aDays;
+    });
+
+    const rowHtml = (r, isWinner) => {
+      const card = r.card;
+      const days = r.hasNoCredit ? null : (r.state === 'ambiguous' ? r.ambiguousRange.min : r.daysToDue);
+      const dueStr = r.hasNoCredit ? 'No credit' : `${days} days · pay ${this.formatShortDate(r.dueDate)}`;
+      const avatar = `<span class="inline-avatar ${card.owner}" style="width:16px;height:16px;font-size:0.5625rem;">${card.owner === 'pv' ? 'P' : 'G'}</span>`;
+      return `
+        <div class="best-costco-pick ${isWinner ? 'winner' : 'loser'}">
+          ${isWinner ? '<span style="font-size:1.1rem;">✅</span>' : '<span style="font-size:1.1rem;">⬜</span>'}
+          <div style="flex:1;min-width:0;">
+            <div class="best-name" style="font-size:0.875rem;">${escapeHtml(card.name)} ${avatar}</div>
+            <div class="best-costco-label">${dueStr}</div>
+          </div>
+          ${isWinner ? '<span style="font-size:0.6875rem;font-weight:600;color:#30d158;">Use this</span>' : ''}
+        </div>`;
+    };
+
+    return `
+      <div style="font-size:0.6875rem;color:var(--text-tertiary);margin-bottom:var(--space-2);">Costco accepts Visa only</div>
+      <div class="best-costco-wrap">
+        ${amazon.map((r, i) => rowHtml(r, i === 0)).join('')}
+      </div>`;
   },
 
   renderDetail() {
@@ -9657,6 +9753,13 @@ document.addEventListener('click', (e) => {
   const cardsOwnerFilter = e.target.closest('[data-cards-owner-filter]');
   if (cardsOwnerFilter) {
     Cards.filterOwner = cardsOwnerFilter.dataset.cardsOwnerFilter;
+    Cards.render();
+    return;
+  }
+
+  const bestTab = e.target.closest('[data-best-tab]');
+  if (bestTab) {
+    Cards.bestTab = bestTab.dataset.bestTab;
     Cards.render();
     return;
   }
