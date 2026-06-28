@@ -3268,7 +3268,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v159</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v160</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -4730,8 +4730,6 @@ function toast(msg, type = 'success', action = null) {
    MODAL
    ============================================ */
 const Modal = {
-  _touchBlock: null,
-  _scrollY: 0,
   open(title, bodyHtml, { sheet = false } = {}) {
     const el = document.getElementById('modal');
     document.getElementById('modal-title').textContent = title;
@@ -4739,19 +4737,11 @@ const Modal = {
     document.getElementById('modal-overlay').classList.add('active');
     el.classList.toggle('modal-sheet', sheet);
     el.classList.add('active');
-    // Lock background scroll without fixing body (body:fixed breaks iOS keyboard)
-    document.documentElement.style.overflow = 'hidden';
-    const overlay = document.getElementById('modal-overlay');
-    this._touchBlock = e => { if (!e.target.closest('.modal')) e.preventDefault(); };
-    overlay.addEventListener('touchmove', this._touchBlock, { passive: false });
   },
   close() {
     document.getElementById('modal-overlay').classList.remove('active');
     const el = document.getElementById('modal');
     el.classList.remove('active', 'modal-sheet');
-    document.documentElement.style.overflow = '';
-    const overlay = document.getElementById('modal-overlay');
-    if (this._touchBlock) { overlay.removeEventListener('touchmove', this._touchBlock); this._touchBlock = null; }
   },
 };
 document.getElementById('modal-overlay').addEventListener('click', () => Modal.close());
