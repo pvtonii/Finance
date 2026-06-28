@@ -3269,7 +3269,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v170</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v171</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3686,18 +3686,28 @@ function localToday() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-function getQuinzenalOccurrences(startDateStr, year, month) {
+function getIntervalOccurrences(startDateStr, year, month, intervalDays) {
   const start = new Date(startDateStr + 'T12:00:00');
   const monthStart = new Date(year, month, 1);
   const monthEnd = new Date(year, month + 1, 0);
+  const ms = intervalDays * 86400000;
   const dates = [];
   let cur = new Date(start);
-  while (cur < monthStart) cur = new Date(cur.getTime() + 14 * 86400000);
+  while (cur < monthStart) cur = new Date(cur.getTime() + ms);
   while (cur <= monthEnd) {
     dates.push(cur.toISOString().split('T')[0]);
-    cur = new Date(cur.getTime() + 14 * 86400000);
+    cur = new Date(cur.getTime() + ms);
   }
   return dates;
+}
+function getQuinzenalOccurrences(startDateStr, year, month) {
+  return getIntervalOccurrences(startDateStr, year, month, 14);
+}
+function isIntervalBased(s) {
+  return s.billing_frequency === 'quinzenal' || s.billing_frequency === 'weekly';
+}
+function getOccurrences(s, year, month) {
+  return getIntervalOccurrences(s.billing_start_date, year, month, s.billing_frequency === 'weekly' ? 7 : 14);
 }
 
 function initSupabaseClient() {
@@ -5097,9 +5107,11 @@ const Settings = {
           <div class="item-meta">
             <span class="owner-tag ${s.owner}">${this.ownerLabel(s.owner)}</span>
             <span>·</span>
-            ${s.billing_frequency === 'quinzenal'
-              ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;">↻ 2 weeks</span>`
-              : `<span>Day ${s.billing_day}</span>`}
+            ${s.billing_frequency === 'weekly'
+              ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;">↻ 1 week</span>`
+              : s.billing_frequency === 'quinzenal'
+                ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;">↻ 2 weeks</span>`
+                : `<span>Day ${s.billing_day}</span>`}
             <span>·</span>
             <span>${escapeHtml(sourceLabel)}</span>
           </div>
@@ -5594,16 +5606,17 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
       <div class="cards-owner-tabs" id="sub-freq-toggle" style="margin-bottom:0;">
         <button class="cards-owner-tab ${selectedFrequency === 'monthly' ? 'active' : ''}" data-freq="monthly">Monthly</button>
         <button class="cards-owner-tab ${selectedFrequency === 'quinzenal' ? 'active' : ''}" data-freq="quinzenal">Every 2 weeks</button>
+        <button class="cards-owner-tab ${selectedFrequency === 'weekly' ? 'active' : ''}" data-freq="weekly">Weekly</button>
       </div>
     </div>
 
-    <div class="form-field" id="sub-day-field" ${selectedFrequency === 'quinzenal' ? 'style="display:none;"' : ''}>
+    <div class="form-field" id="sub-day-field" ${selectedFrequency !== 'monthly' ? 'style="display:none;"' : ''}>
       <label class="form-label">Billing day</label>
       <input class="form-input" id="sub-day" type="number" min="1" max="31" value="${s.billing_day || 1}">
       <div class="form-help">Day of the month it gets charged / received</div>
     </div>
 
-    <div class="form-field" id="sub-start-field" ${selectedFrequency !== 'quinzenal' ? 'style="display:none;"' : ''}>
+    <div class="form-field" id="sub-start-field" ${selectedFrequency === 'monthly' ? 'style="display:none;"' : ''}>
       <label class="form-label">Start date</label>
       <input class="form-input" id="sub-start-date" type="date" value="${s.billing_start_date || localToday()}">
       <div class="form-help">Date of the first / next payment</div>
@@ -5670,8 +5683,8 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
     btn.addEventListener('click', () => {
       selectedFrequency = btn.dataset.freq;
       document.querySelectorAll('#sub-freq-toggle [data-freq]').forEach(b => b.classList.toggle('active', b === btn));
-      document.getElementById('sub-day-field').style.display = selectedFrequency === 'quinzenal' ? 'none' : '';
-      document.getElementById('sub-start-field').style.display = selectedFrequency === 'quinzenal' ? '' : 'none';
+      document.getElementById('sub-day-field').style.display = selectedFrequency === 'monthly' ? '' : 'none';
+      document.getElementById('sub-start-field').style.display = selectedFrequency !== 'monthly' ? '' : 'none';
     });
   });
 
@@ -5683,15 +5696,15 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
     const amountStr = document.getElementById('sub-amount').value.replace(/[^0-9.,]/g, '').replace(',', '.');
     const amount = parseFloat(amountStr);
     const name = document.getElementById('sub-name').value.trim();
-    const billing_day = selectedFrequency === 'quinzenal' ? 1 : parseInt(document.getElementById('sub-day').value, 10);
-    const billing_start_date = selectedFrequency === 'quinzenal' ? (document.getElementById('sub-start-date').value || null) : null;
+    const billing_day = selectedFrequency !== 'monthly' ? 1 : parseInt(document.getElementById('sub-day').value, 10);
+    const billing_start_date = selectedFrequency !== 'monthly' ? (document.getElementById('sub-start-date').value || null) : null;
     const owner = getSelectedOwner();
     const activeEl = document.getElementById('sub-active');
     const is_active = activeEl ? activeEl.checked : true;
 
     if (!name) return toast('Please enter a name', 'error');
     if (!amount || amount <= 0) return toast('Please enter a valid amount', 'error');
-    if (selectedFrequency === 'quinzenal' && !billing_start_date) return toast('Please enter a start date', 'error');
+    if (selectedFrequency !== 'monthly' && !billing_start_date) return toast('Please enter a start date', 'error');
     if (selectedFrequency === 'monthly' && (!billing_day || billing_day < 1 || billing_day > 31)) return toast('Invalid billing day', 'error');
 
     // Warn about duplicate names (only on create or rename)
@@ -7654,13 +7667,13 @@ async function confirmRecurrence(subscriptionId, specificDate = null) {
   const s = State.subscriptions.find(x => x.id === subscriptionId);
   if (!s) return toast('Recurrence not found', 'error');
 
-  const isQuinzenal = s.billing_frequency === 'quinzenal';
+  const isIntervalSub = isIntervalBased(s);
 
   let date, monthKey;
-  if (isQuinzenal) {
-    // Quinzenal always needs a specific occurrence date
+  if (isIntervalSub) {
+    // Interval-based (weekly/quinzenal) always needs a specific occurrence date
     date = specificDate;
-    monthKey = null; // quinzenal uses confirmed_dates instead
+    monthKey = null; // uses confirmed_dates instead
   } else if (specificDate) {
     // Monthly past-due confirm: use the given date + its own month
     date = specificDate;
@@ -7695,7 +7708,7 @@ async function confirmRecurrence(subscriptionId, specificDate = null) {
     }
     const createdTx = await Data.createTransaction(txData);
 
-    if (isQuinzenal) {
+    if (isIntervalSub) {
       // Add date to confirmed_dates, trim entries older than 60 days
       const cutoff = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
       const prev = JSON.parse(s.confirmed_dates || '[]').filter(d => d >= cutoff);
@@ -7713,7 +7726,7 @@ async function confirmRecurrence(subscriptionId, specificDate = null) {
       onClick: async () => {
         try {
           await Data.deleteTransaction(createdTx.id);
-          if (isQuinzenal) {
+          if (isIntervalSub) {
             const prev = JSON.parse(s.confirmed_dates || '[]').filter(d => d !== specificDate);
             await Data.updateSubscription(s.id, { confirmed_dates: JSON.stringify(prev) });
           } else {
@@ -7740,7 +7753,7 @@ async function skipRecurrence(subscriptionId, specificDate = null) {
   const s = State.subscriptions.find(x => x.id === subscriptionId);
   if (!s) return toast('Recurrence not found', 'error');
 
-  const isQuinzenal = s.billing_frequency === 'quinzenal';
+  const isIntervalSub = isIntervalBased(s);
   const prevConfirmed = JSON.parse(s.confirmed_dates || '[]');
 
   try {
@@ -7749,7 +7762,7 @@ async function skipRecurrence(subscriptionId, specificDate = null) {
     const now = new Date();
     const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    if (isQuinzenal && specificDate) {
+    if (isIntervalSub && specificDate) {
       const cutoff = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
       const prev = prevConfirmed.filter(d => d >= cutoff);
       await Data.updateSubscription(s.id, { confirmed_dates: JSON.stringify([...prev, specificDate]) }, { silent: true });
@@ -7762,7 +7775,7 @@ async function skipRecurrence(subscriptionId, specificDate = null) {
 
     // Persist skip so "Skipped this month" section can show a Restore option
     const skipKey = `finance_skips_${ym}`;
-    const skipEntry = { id: s.id, name: s.name, amount: s.amount, isQuinzenal, specificDate: specificDate || null, monthKeyBefore, prevConfirmedJson };
+    const skipEntry = { id: s.id, name: s.name, amount: s.amount, isIntervalSub, specificDate: specificDate || null, monthKeyBefore, prevConfirmedJson };
     const existing = JSON.parse(localStorage.getItem(skipKey) || '[]').filter(e => !(e.id === s.id && e.specificDate === skipEntry.specificDate));
     localStorage.setItem(skipKey, JSON.stringify([...existing, skipEntry]));
 
@@ -7772,7 +7785,7 @@ async function skipRecurrence(subscriptionId, specificDate = null) {
       label: 'Undo',
       onClick: async () => {
         try {
-          if (isQuinzenal && specificDate) {
+          if (isIntervalSub && specificDate) {
             await Data.updateSubscription(s.id, { confirmed_dates: prevConfirmedJson }, { silent: true });
           } else {
             await Data.updateSubscription(s.id, { last_confirmed_month: monthKeyBefore }, { silent: true });
@@ -8254,9 +8267,8 @@ const Calendar = {
       const isCardSub = !!s.card_id;
       const eventColor = isIncome ? 'income' : (isCardSub ? 'subscription' : 'expense');
 
-      if (s.billing_frequency === 'quinzenal' && s.billing_start_date) {
-        // Show all 14-day occurrences in this month
-        getQuinzenalOccurrences(s.billing_start_date, year, month).forEach(dateStr => {
+      if (isIntervalBased(s) && s.billing_start_date) {
+        getOccurrences(s, year, month).forEach(dateStr => {
           addEvent(dateStr, { type: eventColor, title: s.name, amount: Number(s.amount) || 0, color: eventColor, ownerAvatar: s.owner });
         });
         return;
@@ -8925,12 +8937,13 @@ const Dashboard = {
     const earlyRec = earlyNext.items
       .filter(x => x.kind === 'recurring')
       .map(x => {
-        const s = State.subscriptions.find(sub => sub.name === x.name && Number(sub.billing_day) === x.due);
+        const s = State.subscriptions.find(sub => sub.name === x.name && (Number(sub.billing_day) === x.due || isIntervalBased(sub)));
         if (!s) return null;
         const lastDay = new Date(nextYear2, nextMonth2 + 1, 0).getDate();
         const day = Math.min(x.due, lastDay);
         const _early_date = `${nextYear2}-${String(nextMonth2 + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-        return { ...s, _early: true, _early_date };
+        const _occurrence_date = isIntervalBased(s) ? _early_date : undefined;
+        return { ...s, _early: true, _early_date, _occurrence_date };
       }).filter(Boolean);
     this.renderUpcoming(pendingRec.items, pendingCards, earlyRec);
 
@@ -9025,6 +9038,17 @@ const Dashboard = {
       if (s.card_id) return;
       const amount = Number(s.amount) || 0;
       if (!amount) return;
+      if (isIntervalBased(s) && s.billing_start_date) {
+        // Check if any occurrence in next month falls within cutoff
+        const confirmedDates = JSON.parse(s.confirmed_dates || '[]');
+        getOccurrences(s, nextYear, nextMonth).forEach(dateStr => {
+          const day = parseInt(dateStr.split('-')[2], 10);
+          if (day <= CUTOFF && !confirmedDates.includes(dateStr)) {
+            items.push({ name: s.name, amount, due: day, kind: 'recurring' });
+          }
+        });
+        return;
+      }
       const day = Number(s.billing_day);
       if (!day || day > CUTOFF) return;
       if (s.last_confirmed_month?.startsWith(nextYm)) return;
@@ -9064,9 +9088,9 @@ const Dashboard = {
     const pendingIds = new Set(pendingRec.items.map(s => s.id));
     const handledThisMonth = State.subscriptions.filter(s => {
       if (!s.is_active || pendingIds.has(s.id)) return false;
-      if (s.billing_frequency === 'quinzenal' && s.billing_start_date) {
+      if (isIntervalBased(s) && s.billing_start_date) {
         const confirmed = JSON.parse(s.confirmed_dates || '[]');
-        return getQuinzenalOccurrences(s.billing_start_date, nowYear, nowMonth).some(d => confirmed.includes(d));
+        return getOccurrences(s, nowYear, nowMonth).some(d => confirmed.includes(d));
       }
       return s.last_confirmed_month?.startsWith(ym);
     });
@@ -9168,10 +9192,10 @@ const Dashboard = {
       // Card-charged subs are already inside the card invoice total — skip them
       if (s.card_id) return;
 
-      // Quinzenal (every 15 days) — generate each occurrence as a separate item
-      if (s.billing_frequency === 'quinzenal' && s.billing_start_date) {
+      // Interval-based (weekly / quinzenal) — generate each occurrence as a separate item
+      if (isIntervalBased(s) && s.billing_start_date) {
         const confirmedDates = JSON.parse(s.confirmed_dates || '[]');
-        const occurrences = getQuinzenalOccurrences(s.billing_start_date, today.getFullYear(), today.getMonth());
+        const occurrences = getOccurrences(s, today.getFullYear(), today.getMonth());
         occurrences.forEach(dateStr => {
           if (!confirmedDates.includes(dateStr)) {
             items.push({ ...s, _occurrence_date: dateStr });
@@ -9207,9 +9231,9 @@ const Dashboard = {
     const items = [];
 
     State.subscriptions.filter(s => s.is_active !== false).forEach(s => {
-      if (s.billing_frequency === 'quinzenal' && s.billing_start_date) {
+      if (isIntervalBased(s) && s.billing_start_date) {
         const confirmedDates = JSON.parse(s.confirmed_dates || '[]');
-        getQuinzenalOccurrences(s.billing_start_date, prevYear, prevMonth).forEach(dateStr => {
+        getOccurrences(s, prevYear, prevMonth).forEach(dateStr => {
           if (!confirmedDates.includes(dateStr)) items.push({ ...s, _past_date: dateStr });
         });
         return;
@@ -9382,7 +9406,7 @@ const Dashboard = {
         const e = JSON.parse(btn.dataset.restoreSkip);
         btn.disabled = true; btn.textContent = '…';
         try {
-          if (e.isQuinzenal && e.specificDate) {
+          if ((e.isIntervalSub || e.isQuinzenal) && e.specificDate) {
             await Data.updateSubscription(e.id, { confirmed_dates: e.prevConfirmedJson }, { silent: true });
           } else {
             await Data.updateSubscription(e.id, { last_confirmed_month: e.monthKeyBefore }, { silent: true });
@@ -9469,7 +9493,8 @@ const Dashboard = {
       : s._occurrence_date
         ? new Date(s._occurrence_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         : `Day ${s.billing_day}`;
-    const biweeklyBadge = s._occurrence_date ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;margin-left:4px;">↻ 2 weeks</span>` : '';
+    const intervalLabel = s.billing_frequency === 'weekly' ? '↻ 1 week' : '↻ 2 weeks';
+    const biweeklyBadge = s._occurrence_date ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;margin-left:4px;">${intervalLabel}</span>` : '';
     const confirmDate = s._early_date || s._occurrence_date || '';
 
     return `
