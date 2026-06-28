@@ -3269,7 +3269,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v161</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v162</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -7746,6 +7746,9 @@ async function skipRecurrence(subscriptionId, specificDate = null) {
   try {
     const monthKeyBefore = s.last_confirmed_month ?? null;
     const prevConfirmedJson = s.confirmed_dates || '[]';
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
     if (isQuinzenal && specificDate) {
       const cutoff = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
       const prev = prevConfirmed.filter(d => d >= cutoff);
@@ -7756,6 +7759,12 @@ async function skipRecurrence(subscriptionId, specificDate = null) {
       await Data.updateSubscription(s.id, { last_confirmed_month: monthKey }, { silent: true });
     }
     ActivityLog.record('skip', 'recurring', s.name);
+
+    // Persist skip so "Skipped this month" section can show a Restore option
+    const skipKey = `finance_skips_${ym}`;
+    const skipEntry = { id: s.id, name: s.name, amount: s.amount, isQuinzenal, specificDate: specificDate || null, monthKeyBefore, prevConfirmedJson };
+    const existing = JSON.parse(localStorage.getItem(skipKey) || '[]').filter(e => !(e.id === s.id && e.specificDate === skipEntry.specificDate));
+    localStorage.setItem(skipKey, JSON.stringify([...existing, skipEntry]));
 
     Dashboard.render();
 
@@ -7768,7 +7777,9 @@ async function skipRecurrence(subscriptionId, specificDate = null) {
           } else {
             await Data.updateSubscription(s.id, { last_confirmed_month: monthKeyBefore }, { silent: true });
           }
-          ActivityLog.record('update', 'recurring', s.name);
+          // Remove from localStorage
+          const cur = JSON.parse(localStorage.getItem(skipKey) || '[]').filter(e => !(e.id === s.id && e.specificDate === skipEntry.specificDate));
+          localStorage.setItem(skipKey, JSON.stringify(cur));
           Dashboard.render();
           toast(`${s.name} restored`);
         } catch (err) {
@@ -9203,6 +9214,12 @@ const Dashboard = {
     return items;
   },
 
+  getSkippedThisMonth() {
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return JSON.parse(localStorage.getItem(`finance_skips_${ym}`) || '[]');
+  },
+
   renderUpcoming(items, pendingCards = []) {
     const container = document.getElementById('dash-upcoming');
     if (!container) return;
@@ -9275,6 +9292,61 @@ const Dashboard = {
       btn.addEventListener('click', () => {
         Dashboard.upcomingView = btn.dataset.upcomingView;
         Dashboard.render();
+      });
+    });
+
+    // Skipped this month section
+    this.renderSkipped(container);
+  },
+
+  renderSkipped(container) {
+    const skipped = this.getSkippedThisMonth();
+    let el = document.getElementById('dash-skipped');
+    if (!skipped.length) { if (el) el.remove(); return; }
+
+    const rowsHtml = skipped.map(e => `
+      <div class="upcoming-row">
+        <div class="upcoming-icon" style="opacity:0.5;">⊘</div>
+        <div class="upcoming-info">
+          <div class="upcoming-name" style="opacity:0.6;">${escapeHtml(e.name)}</div>
+          <div class="upcoming-meta">Skipped this month</div>
+        </div>
+        <div class="upcoming-amount text-danger" style="opacity:0.6;">−${App.formatCurrency(e.amount)}</div>
+        <button class="upcoming-confirm" data-restore-skip='${JSON.stringify(e)}' title="Restore">↩</button>
+      </div>`).join('');
+
+    const html = `
+      <div class="card upcoming-card fade-in" id="dash-skipped" style="margin-top:var(--space-3);">
+        <div class="upcoming-header">
+          <span class="upcoming-title">Skipped this month</span>
+          <span class="upcoming-count">${skipped.length}</span>
+        </div>
+        ${rowsHtml}
+      </div>`;
+
+    if (el) { el.outerHTML = html; el = document.getElementById('dash-skipped'); }
+    else container.insertAdjacentHTML('beforeend', html);
+
+    document.querySelectorAll('[data-restore-skip]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const e = JSON.parse(btn.dataset.restoreSkip);
+        btn.disabled = true; btn.textContent = '…';
+        try {
+          if (e.isQuinzenal && e.specificDate) {
+            await Data.updateSubscription(e.id, { confirmed_dates: e.prevConfirmedJson }, { silent: true });
+          } else {
+            await Data.updateSubscription(e.id, { last_confirmed_month: e.monthKeyBefore }, { silent: true });
+          }
+          const now = new Date();
+          const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+          const skipKey = `finance_skips_${ym}`;
+          const cur = JSON.parse(localStorage.getItem(skipKey) || '[]').filter(x => !(x.id === e.id && x.specificDate === e.specificDate));
+          localStorage.setItem(skipKey, JSON.stringify(cur));
+          Dashboard.render();
+          toast(`${e.name} restored`);
+        } catch (err) {
+          toast('Restore failed: ' + err.message, 'error');
+        }
       });
     });
   },
