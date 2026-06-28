@@ -583,6 +583,7 @@ h1, h2, h3 {
   justify-content: center;
   box-shadow: var(--shadow-lg);
   z-index: 85;
+  touch-action: manipulation;
   transition: transform var(--duration) var(--ease);
 }
 .fab:hover { transform: scale(1.05); }
@@ -3268,7 +3269,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v160</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v161</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3895,8 +3896,8 @@ const ActivityLog = {
       return;
     }
 
-    const actionIcons = { create: '+', update: '✎', delete: '×' };
-    const actionLabels = { create: 'Created', update: 'Updated', delete: 'Deleted' };
+    const actionIcons = { create: '+', update: '✎', delete: '×', skip: '⊘' };
+    const actionLabels = { create: 'Created', update: 'Updated', delete: 'Deleted', skip: 'Skipped' };
     container.innerHTML = entries.map(e => {
       const userClass = e.user_id === 'pv' ? 'pv' : e.user_id === 'gigi' ? 'gigi' : 'shared';
       const userLetter = e.user_id === 'pv' ? 'P' : e.user_id === 'gigi' ? 'G' : '?';
@@ -4130,7 +4131,7 @@ const Data = {
     ActivityLog.record('create', 'recurring', `${row.name} · ${App.formatCurrency(row.amount)}`);
     return row;
   },
-  async updateSubscription(id, data) {
+  async updateSubscription(id, data, { silent = false } = {}) {
     if (!db) throw new Error('Supabase not configured');
     Status.set('syncing', 'Updating…');
     const { data: row, error } = await db.from('subscriptions').update(data).eq('id', id).select().single();
@@ -4139,7 +4140,7 @@ const Data = {
     const idx = State.subscriptions.findIndex(s => s.id === id);
     if (idx >= 0) State.subscriptions[idx] = row;
     this._setReady();
-    ActivityLog.record('update', 'recurring', `${row.name} · ${App.formatCurrency(row.amount)}`);
+    if (!silent) ActivityLog.record('update', 'recurring', `${row.name} · ${App.formatCurrency(row.amount)}`);
     return row;
   },
   async deleteSubscription(id) {
@@ -7743,16 +7744,18 @@ async function skipRecurrence(subscriptionId, specificDate = null) {
   const prevConfirmed = JSON.parse(s.confirmed_dates || '[]');
 
   try {
-    let monthKeyBefore = s.last_confirmed_month;
+    const monthKeyBefore = s.last_confirmed_month ?? null;
+    const prevConfirmedJson = s.confirmed_dates || '[]';
     if (isQuinzenal && specificDate) {
       const cutoff = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
       const prev = prevConfirmed.filter(d => d >= cutoff);
-      await Data.updateSubscription(s.id, { confirmed_dates: JSON.stringify([...prev, specificDate]) });
+      await Data.updateSubscription(s.id, { confirmed_dates: JSON.stringify([...prev, specificDate]) }, { silent: true });
     } else {
       const monthKey = specificDate ? specificDate.substring(0, 7) + '-01'
         : (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; })();
-      await Data.updateSubscription(s.id, { last_confirmed_month: monthKey });
+      await Data.updateSubscription(s.id, { last_confirmed_month: monthKey }, { silent: true });
     }
+    ActivityLog.record('skip', 'recurring', s.name);
 
     Dashboard.render();
 
@@ -7761,10 +7764,11 @@ async function skipRecurrence(subscriptionId, specificDate = null) {
       onClick: async () => {
         try {
           if (isQuinzenal && specificDate) {
-            await Data.updateSubscription(s.id, { confirmed_dates: JSON.stringify(prevConfirmed) });
+            await Data.updateSubscription(s.id, { confirmed_dates: prevConfirmedJson }, { silent: true });
           } else {
-            await Data.updateSubscription(s.id, { last_confirmed_month: monthKeyBefore });
+            await Data.updateSubscription(s.id, { last_confirmed_month: monthKeyBefore }, { silent: true });
           }
+          ActivityLog.record('update', 'recurring', s.name);
           Dashboard.render();
           toast(`${s.name} restored`);
         } catch (err) {
@@ -8929,8 +8933,8 @@ const Dashboard = {
 
     const cycle = ['all', 'pv', 'gigi'];
     const labels = { all: 'Anyone', pv: 'PV', gigi: 'Gigi' };
-    const actionIcons = { create: '+', update: '✎', delete: '×' };
-    const actionLabels = { create: 'Created', update: 'Updated', delete: 'Deleted' };
+    const actionIcons = { create: '+', update: '✎', delete: '×', skip: '⊘' };
+    const actionLabels = { create: 'Created', update: 'Updated', delete: 'Deleted', skip: 'Skipped' };
 
     const rowsHtml = top3.length ? top3.map(e => {
       const userClass = e.user_id === 'pv' ? 'pv' : e.user_id === 'gigi' ? 'gigi' : 'shared';
