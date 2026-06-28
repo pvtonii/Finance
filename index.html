@@ -3269,7 +3269,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v165</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v166</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -8919,7 +8919,21 @@ const Dashboard = {
       if (dy === nextYear && dm === nextMonth && dd <= 15) return true;
       return false;
     });
-    this.renderUpcoming(pendingRec.items, pendingCards);
+    // Early-next-month subs (billing_day ≤ 5) — show in Upcoming with next-month label
+    const earlyNext = this.calcEarlyNextMonth();
+    const nextRef2 = new Date(nowYear, nowMonth + 1, 1);
+    const nextYear2 = nextRef2.getFullYear(), nextMonth2 = nextRef2.getMonth();
+    const earlyRec = earlyNext.items
+      .filter(x => x.kind === 'recurring')
+      .map(x => {
+        const s = State.subscriptions.find(sub => sub.name === x.name && Number(sub.billing_day) === x.due);
+        if (!s) return null;
+        const lastDay = new Date(nextYear2, nextMonth2 + 1, 0).getDate();
+        const day = Math.min(x.due, lastDay);
+        const _early_date = `${nextYear2}-${String(nextMonth2 + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        return { ...s, _early: true, _early_date };
+      }).filter(Boolean);
+    this.renderUpcoming(pendingRec.items, pendingCards, earlyRec);
 
     // Recent activity (last 3 actions)
     this.renderRecent();
@@ -9222,13 +9236,13 @@ const Dashboard = {
     return JSON.parse(localStorage.getItem(`finance_skips_${ym}`) || '[]');
   },
 
-  renderUpcoming(items, pendingCards = []) {
+  renderUpcoming(items, pendingCards = [], earlyRec = []) {
     const container = document.getElementById('dash-upcoming');
     if (!container) return;
 
     const view = this.upcomingView;
     const pastItems = this.calcRecurrencesPastDue();
-    const hasCurrent = items.length > 0 || pendingCards.length > 0;
+    const hasCurrent = items.length > 0 || pendingCards.length > 0 || earlyRec.length > 0;
     const hasPast = pastItems.length > 0;
 
     // Nothing anywhere → hide the whole card (and reset to current view)
@@ -9244,7 +9258,7 @@ const Dashboard = {
         <button class="uv-tab ${view === 'past' ? 'active' : ''}" data-upcoming-view="past">Past</button>
       </div>` : '';
 
-    const currentCount = items.length + pendingCards.length;
+    const currentCount = items.length + pendingCards.length + earlyRec.length;
     const title = view === 'current' ? 'Upcoming this month' : 'Past unconfirmed';
     const count = view === 'current' ? currentCount : pastItems.length;
 
@@ -9267,7 +9281,8 @@ const Dashboard = {
             const subKey = s => s._occurrence_date || `${ym2}-${String(Math.min(Number(s.billing_day)||1,lastDay2)).padStart(2,'0')}`;
             const all = [
               ...pendingCards.map(c => ({ type:'card', data:c, k:cardKey(c) })),
-              ...items.map(s => ({ type:'sub', data:s, k:subKey(s) }))
+              ...items.map(s => ({ type:'sub', data:s, k:subKey(s) })),
+              ...earlyRec.map(s => ({ type:'sub', data:s, k:s._early_date }))
             ].sort((a,b) => a.k.localeCompare(b.k));
             return all.map(r => r.type==='card' ? this.upcomingCardRow(r.data) : this.upcomingRow(r.data)).join('');
           })()}
@@ -9447,21 +9462,25 @@ const Dashboard = {
     const icon = isCard ? '🔄' : (catChild?.icon || catParent?.icon || (isIncome ? '💰' : '🔁'));
     const sign = isIncome ? '+' : '-';
     const amountClass = isIncome ? 'text-success' : 'text-danger';
-    const metaDate = s._occurrence_date
-      ? new Date(s._occurrence_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      : `Day ${s.billing_day}`;
+    const metaDate = s._early_date
+      ? `<span style="color:#f59e0b;">${new Date(s._early_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`
+      : s._occurrence_date
+        ? new Date(s._occurrence_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : `Day ${s.billing_day}`;
     const biweeklyBadge = s._occurrence_date ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;margin-left:4px;">↻ 2 weeks</span>` : '';
+    const earlyBadge = s._early ? `<span class="type-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;margin-left:4px;">next month</span>` : '';
+    const confirmDate = s._early_date || s._occurrence_date || '';
 
     return `
       <div class="upcoming-row">
         <div class="upcoming-icon">${icon}</div>
         <div class="upcoming-info">
-          <div class="upcoming-name">${escapeHtml(s.name)}${biweeklyBadge}</div>
+          <div class="upcoming-name">${escapeHtml(s.name)}${biweeklyBadge}${earlyBadge}</div>
           <div class="upcoming-meta">${metaDate} · ${escapeHtml(sourceLabel)}</div>
         </div>
         <div class="upcoming-amount ${amountClass}">${sign}${App.formatCurrency(s.amount)}</div>
-        <button class="upcoming-confirm" data-confirm-rec="${s.id}" data-confirm-date="${s._occurrence_date || ''}">✓</button>
-        <button class="upcoming-skip" data-skip-rec="${s.id}" data-skip-date="${s._occurrence_date || ''}">✗</button>
+        <button class="upcoming-confirm" data-confirm-rec="${s.id}" data-confirm-date="${confirmDate}">✓</button>
+        <button class="upcoming-skip" data-skip-rec="${s.id}" data-skip-date="${confirmDate}">✗</button>
       </div>
     `;
   },
