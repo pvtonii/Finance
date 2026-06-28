@@ -3269,7 +3269,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v163</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v164</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -9286,8 +9286,13 @@ const Dashboard = {
     });
     container.querySelectorAll('[data-skip-rec]').forEach(btn => {
       btn.addEventListener('click', () => {
+        const id = btn.dataset.skipRec;
+        const date = btn.dataset.skipDate || null;
+        const s = State.subscriptions.find(x => x.id === id);
+        const name = s ? s.name : 'this item';
+        if (!confirm(`Skip ${name} this month?\n\nYou can restore it from the "Handled this month" section below.`)) return;
         btn.disabled = true; btn.textContent = '✗';
-        skipRecurrence(btn.dataset.skipRec, btn.dataset.skipDate || null);
+        skipRecurrence(id, date);
       });
     });
     container.querySelectorAll('[data-upcoming-view]').forEach(btn => {
