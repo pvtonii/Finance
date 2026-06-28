@@ -3269,7 +3269,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v162</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v163</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -9077,9 +9077,11 @@ const Dashboard = {
         <span class="text-mono ${cls}" style="font-size:0.8125rem;">${sign}${App.formatCurrency(amt)}</span>
       </div>`;
 
-    const skippedRow = (name, amt, sign) =>
-      `<div style="display:flex;justify-content:space-between;padding:3px 0 3px 12px;opacity:0.4;">
-        <span style="font-size:0.8125rem;text-decoration:line-through;color:var(--text-tertiary);">${escapeHtml(name)}</span>
+    const lsSkipIds = new Set(this.getSkippedThisMonth().map(e => e.id));
+
+    const handledRow = (s, amt, sign, isSkipped) =>
+      `<div style="display:flex;justify-content:space-between;padding:3px 0 3px 12px;opacity:${isSkipped ? '0.55' : '0.4'};">
+        <span style="font-size:0.8125rem;text-decoration:line-through;color:var(--text-tertiary);">${escapeHtml(s.name)}${isSkipped ? '<span style="text-decoration:none;font-size:0.7rem;color:#bf5af2;margin-left:5px;font-weight:600;">skipped</span>' : ''}</span>
         <span class="text-mono" style="font-size:0.8125rem;text-decoration:line-through;color:var(--text-tertiary);">${sign}${App.formatCurrency(amt)}</span>
       </div>`;
 
@@ -9087,7 +9089,7 @@ const Dashboard = {
       if (!pending.length && !handled.length) return '';
       return sectionRow(label, (sign === '+' ? '+' : '-') + App.formatCurrency(total), cls)
         + pending.map(s => itemRow(s.name, s.amount, sign, cls)).join('')
-        + handled.map(s => skippedRow(s.name, s.amount, sign)).join('');
+        + handled.map(s => handledRow(s, s.amount, sign, lsSkipIds.has(s.id))).join('');
     };
 
     const divider = `<div style="border-top:2px solid var(--border);margin:10px 0;"></div>`;
@@ -9300,31 +9302,59 @@ const Dashboard = {
   },
 
   renderSkipped(container) {
-    const skipped = this.getSkippedThisMonth();
-    let el = document.getElementById('dash-skipped');
-    if (!skipped.length) { if (el) el.remove(); return; }
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const skipKey = `finance_skips_${ym}`;
+    const lsSkips = this.getSkippedThisMonth();
+    const lsSkipIds = new Set(lsSkips.map(e => e.id));
 
-    const rowsHtml = skipped.map(e => `
+    // Also find any subs handled this month NOT tracked in localStorage
+    // (confirmed or skipped before the fix was in place)
+    const pendingIds = new Set(this.calcRecurrencesPending().items.map(s => s.id));
+    const otherHandled = State.subscriptions.filter(s => {
+      if (!s.is_active || s.card_id) return false;
+      if (pendingIds.has(s.id) || lsSkipIds.has(s.id)) return false;
+      return s.last_confirmed_month?.startsWith(ym);
+    });
+
+    const total = lsSkips.length + otherHandled.length;
+    let el = document.getElementById('dash-skipped');
+    if (!total) { if (el) el.remove(); return; }
+
+    const makeRestorePayload = e => JSON.stringify(e).replace(/'/g, '&#39;');
+
+    const skippedRows = lsSkips.map(e => `
       <div class="upcoming-row">
         <div class="upcoming-icon" style="opacity:0.5;">⊘</div>
         <div class="upcoming-info">
-          <div class="upcoming-name" style="opacity:0.6;">${escapeHtml(e.name)}</div>
+          <div class="upcoming-name" style="opacity:0.65;">${escapeHtml(e.name)}</div>
           <div class="upcoming-meta">Skipped this month</div>
         </div>
         <div class="upcoming-amount text-danger" style="opacity:0.6;">−${App.formatCurrency(e.amount)}</div>
-        <button class="upcoming-confirm" data-restore-skip='${JSON.stringify(e)}' title="Restore">↩</button>
+        <button class="upcoming-confirm" data-restore-skip='${makeRestorePayload(e)}' title="Restore">↩</button>
+      </div>`).join('');
+
+    const handledRows = otherHandled.map(s => `
+      <div class="upcoming-row">
+        <div class="upcoming-icon" style="opacity:0.5;">✓</div>
+        <div class="upcoming-info">
+          <div class="upcoming-name" style="opacity:0.65;">${escapeHtml(s.name)}</div>
+          <div class="upcoming-meta">Confirmed this month</div>
+        </div>
+        <div class="upcoming-amount text-danger" style="opacity:0.6;">−${App.formatCurrency(s.amount)}</div>
+        <button class="upcoming-confirm" data-restore-handled="${s.id}" title="Restore">↩</button>
       </div>`).join('');
 
     const html = `
       <div class="card upcoming-card fade-in" id="dash-skipped" style="margin-top:var(--space-3);">
         <div class="upcoming-header">
-          <span class="upcoming-title">Skipped this month</span>
-          <span class="upcoming-count">${skipped.length}</span>
+          <span class="upcoming-title">Handled this month</span>
+          <span class="upcoming-count">${total}</span>
         </div>
-        ${rowsHtml}
+        ${skippedRows}${handledRows}
       </div>`;
 
-    if (el) { el.outerHTML = html; el = document.getElementById('dash-skipped'); }
+    if (el) el.outerHTML = html;
     else container.insertAdjacentHTML('beforeend', html);
 
     document.querySelectorAll('[data-restore-skip]').forEach(btn => {
@@ -9337,16 +9367,22 @@ const Dashboard = {
           } else {
             await Data.updateSubscription(e.id, { last_confirmed_month: e.monthKeyBefore }, { silent: true });
           }
-          const now = new Date();
-          const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-          const skipKey = `finance_skips_${ym}`;
           const cur = JSON.parse(localStorage.getItem(skipKey) || '[]').filter(x => !(x.id === e.id && x.specificDate === e.specificDate));
           localStorage.setItem(skipKey, JSON.stringify(cur));
           Dashboard.render();
           toast(`${e.name} restored`);
-        } catch (err) {
-          toast('Restore failed: ' + err.message, 'error');
-        }
+        } catch (err) { toast('Restore failed: ' + err.message, 'error'); }
+      });
+    });
+
+    document.querySelectorAll('[data-restore-handled]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = '…';
+        try {
+          await Data.updateSubscription(btn.dataset.restoreHandled, { last_confirmed_month: null }, { silent: true });
+          Dashboard.render();
+          toast('Restored');
+        } catch (err) { toast('Restore failed: ' + err.message, 'error'); }
       });
     });
   },
