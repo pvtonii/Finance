@@ -9497,7 +9497,7 @@ const Dashboard = {
       const meta = `${metaLabel} · ${monthLabel(e._ym)}`;
       const restoreBtn = isSkip
         ? `<button class="upcoming-confirm" data-restore-skip='${makeRestorePayload(e)}' title="Restore">↩</button>`
-        : (isCurrentMonth && !isPayment)
+        : !isPayment
           ? `<button class="upcoming-confirm" data-restore-handled="${e.id}" title="Restore">↩</button>`
           : '';
       const icon = isSkip ? '⊘' : (isPayment ? '💳' : '✓');
