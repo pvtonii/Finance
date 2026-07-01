@@ -9354,8 +9354,8 @@ const Dashboard = {
     // Skips from current + previous month where billing date is within last 3 days
     const skips = [currentYm, prevYm].flatMap(ym =>
       JSON.parse(localStorage.getItem(`finance_skips_${ym}`) || '[]')
-        .map(e => ({ ...e, _ym: ym, _kind: 'skip' }))
-    ).filter(e => !e.specificDate || e.specificDate >= cutoff);
+        .map(e => ({ ...e, _ym: ym, _kind: 'skip', _date: e.specificDate || `${ym}-01` }))
+    ).filter(e => e._date >= cutoff);
 
     const skipIds = new Set(skips.map(e => e.id));
 
@@ -9369,20 +9369,23 @@ const Dashboard = {
       const day = Math.min(Number(s.billing_day) || 1, lastDay);
       const billingDate = `${ym}-${String(day).padStart(2,'0')}`;
       return billingDate >= cutoff;
-    }).map(s => ({
-      id: s.id, name: s.name, amount: s.amount, type: s.type,
-      _ym: s.last_confirmed_month.substring(0, 7),
-      _kind: 'confirm',
-    }));
+    }).map(s => {
+      const ym = s.last_confirmed_month.substring(0, 7);
+      const [y, mo] = ym.split('-').map(Number);
+      const lastDay = new Date(y, mo, 0).getDate();
+      const day = Math.min(Number(s.billing_day) || 1, lastDay);
+      return { id: s.id, name: s.name, amount: s.amount, type: s.type,
+        _ym: ym, _date: `${ym}-${String(day).padStart(2,'0')}`, _kind: 'confirm' };
+    });
 
     // Card invoice payments within last 3 days — description has full detail
     const cardPayments = (State.transactions || []).filter(t => t.is_payment && t.date >= cutoff).map(t => {
       const label = t.description?.startsWith('Payment: ') ? t.description.replace('Payment: ', '') : (t.description || 'Card payment');
       return { id: 'pay_' + t.id, name: label, amount: Number(t.amount) || 0,
-        type: 'expense', _ym: t.date?.substring(0, 7) || '', _kind: 'payment' };
+        type: 'expense', _ym: t.date?.substring(0, 7) || '', _date: t.date || '', _kind: 'payment' };
     });
 
-    const all = [...skips, ...cardPayments, ...confirmed].sort((a, b) => b._ym.localeCompare(a._ym));
+    const all = [...skips, ...cardPayments, ...confirmed].sort((a, b) => b._date.localeCompare(a._date));
     return all.slice(0, n);
   },
 
