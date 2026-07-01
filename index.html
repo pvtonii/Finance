@@ -266,11 +266,12 @@ h1, h2, h3 {
   overflow: hidden;
   padding: 0;
 }
-/* #page-calendar must be a flex item so height flows down the chain */
+/* #page-calendar must be flex when active — specificity of #id overrides .page display:none */
 #page-calendar {
   flex: 1; min-height: 0;
-  display: flex; flex-direction: column;
+  flex-direction: column;
 }
+#page-calendar.active { display: flex; }
 #calendar-page-content {
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
@@ -9342,36 +9343,45 @@ const Dashboard = {
     return JSON.parse(localStorage.getItem(`finance_skips_${ym}`) || '[]');
   },
 
-  getRecentDealt(n = 3) {
+  getRecentDealt(n = 8) {
     const now = new Date();
-    const recentYms = [0, 1, 2].map(offset => {
-      const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    });
-    const skips = recentYms.flatMap(ym =>
+    const threeDaysAgo = new Date(now);
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    const cutoff = `${threeDaysAgo.getFullYear()}-${String(threeDaysAgo.getMonth()+1).padStart(2,'0')}-${String(threeDaysAgo.getDate()).padStart(2,'0')}`;
+    const currentYm = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const prevYm = (() => { const d = new Date(now.getFullYear(), now.getMonth()-1, 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; })();
+
+    // Skips from current + previous month where billing date is within last 3 days
+    const skips = [currentYm, prevYm].flatMap(ym =>
       JSON.parse(localStorage.getItem(`finance_skips_${ym}`) || '[]')
         .map(e => ({ ...e, _ym: ym, _kind: 'skip' }))
-    );
+    ).filter(e => !e.specificDate || e.specificDate >= cutoff);
+
     const skipIds = new Set(skips.map(e => e.id));
+
+    // Confirmed subs where billing_day date in confirmed month falls within last 3 days
     const confirmed = State.subscriptions.filter(s => {
-      if (!s.is_active) return false;
+      if (!s.is_active || !s.last_confirmed_month) return false;
       if (skipIds.has(s.id)) return false;
-      return recentYms.some(ym => s.last_confirmed_month?.startsWith(ym));
+      const ym = s.last_confirmed_month.substring(0, 7);
+      const [y, mo] = ym.split('-').map(Number);
+      const lastDay = new Date(y, mo, 0).getDate();
+      const day = Math.min(Number(s.billing_day) || 1, lastDay);
+      const billingDate = `${ym}-${String(day).padStart(2,'0')}`;
+      return billingDate >= cutoff;
     }).map(s => ({
       id: s.id, name: s.name, amount: s.amount, type: s.type,
-      _ym: s.last_confirmed_month?.substring(0, 7) || '',
+      _ym: s.last_confirmed_month.substring(0, 7),
       _kind: 'confirm',
     }));
-    // Card invoice payments (is_payment=true transactions from recent months)
-    const recentDateCutoff = (() => {
-      const d = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
-    })();
-    const cardPayments = (State.transactions || []).filter(t => t.is_payment && t.date >= recentDateCutoff).map(t => {
-      const card = State.cards.find(c => c.id === t.card_id);
-      return { id: 'pay_' + t.id, name: (card?.name || 'Card') + ' paid',
-        amount: Number(t.amount) || 0, type: 'expense', _ym: t.date?.substring(0, 7) || '', _kind: 'payment' };
+
+    // Card invoice payments within last 3 days — description has full detail
+    const cardPayments = (State.transactions || []).filter(t => t.is_payment && t.date >= cutoff).map(t => {
+      const label = t.description?.startsWith('Payment: ') ? t.description.replace('Payment: ', '') : (t.description || 'Card payment');
+      return { id: 'pay_' + t.id, name: label, amount: Number(t.amount) || 0,
+        type: 'expense', _ym: t.date?.substring(0, 7) || '', _kind: 'payment' };
     });
+
     const all = [...skips, ...cardPayments, ...confirmed].sort((a, b) => b._ym.localeCompare(a._ym));
     return all.slice(0, n);
   },
