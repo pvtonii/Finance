@@ -6279,7 +6279,7 @@ function openTransactionForm(transaction = null) {
     : null;
 
   // Source: 'account' ou 'card'
-  const initialSource = t.card_id ? 'card' : (isEdit ? 'account' : 'card');
+  const initialSource = t.card_id ? 'card' : (t.account_id || isEdit ? 'account' : 'card');
 
   const modalTitle = isInstallmentGroup
     ? `Edit installment group (${t.installments_total}x)`
@@ -9143,7 +9143,8 @@ const Dashboard = {
       if (dueDate.getFullYear() !== nowYear || dueDate.getMonth() !== nowMonth) return null;
       const amount = Math.max(0, Invoice.getInvoiceTotal(card.id, m) - Invoice.getInvoicePaid(card.id, m));
       if (amount === 0) return null;
-      return { name: card.name, amount };
+      const dueDateStr = dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return { name: card.name, amount, dueDateStr };
     }).filter(Boolean);
     const cardsDue = cardsDueItems.reduce((s, x) => s + x.amount, 0);
 
@@ -9237,7 +9238,7 @@ const Dashboard = {
     const body = `
       <div style="padding-bottom:var(--space-2);">
         ${sectionRow('Checking balance', App.formatCurrency(liquidBalance), liquidBalance >= 0 ? 'text-success' : 'text-danger')}
-        ${cardsDueItems.length ? sectionRow(`Cards due (${monthName})`, '-' + App.formatCurrency(cardsDue), 'text-danger') + cardsDueItems.map(c => itemRow(c.name, c.amount, '-', 'text-danger')).join('') : ''}
+        ${cardsDueItems.length ? sectionRow(`Cards due (${monthName})`, '-' + App.formatCurrency(cardsDue), 'text-danger') + cardsDueItems.map(c => itemRow(c.name, c.amount, '-', 'text-danger', c.dueDateStr)).join('') : ''}
         ${section('Bills', pendingBills, handledBills, '-', 'text-danger', pendingRec.accountExpense)}
         ${section('Subscriptions', pendingSubs, handledSubs, '-', 'text-danger', pendingRec.cardExpense)}
         ${section('Income', pendingIncome, handledIncome, '+', 'text-success', pendingRec.income)}
@@ -9347,10 +9348,9 @@ const Dashboard = {
         .map(e => ({ ...e, _ym: ym, _kind: 'skip' }))
     );
     const skipIds = new Set(skips.map(e => e.id));
-    const pendingIds = new Set(this.calcRecurrencesPending().items.map(s => s.id));
     const confirmed = State.subscriptions.filter(s => {
       if (!s.is_active || s.card_id) return false;
-      if (pendingIds.has(s.id) || skipIds.has(s.id)) return false;
+      if (skipIds.has(s.id)) return false;
       return recentYms.some(ym => s.last_confirmed_month?.startsWith(ym));
     }).map(s => ({
       id: s.id, name: s.name, amount: s.amount,
@@ -9855,6 +9855,7 @@ document.querySelectorAll('[data-fab-action]').forEach(btn => {
         date: localToday(),
         account_id: sofiAcc?.id || (State.accounts.find(a => a.owner === user) || State.accounts[0])?.id || null,
         card_id: null,
+        category_id: '7759053f-f6e0-4749-ac42-789824559d97',
         owner: user,
       });
     }
