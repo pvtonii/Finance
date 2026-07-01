@@ -255,6 +255,8 @@ h1, h2, h3 {
   flex-direction: column;
   min-height: 100svh;
 }
+/* All pages: min-height so sparse content still fills screen and nav stays at bottom */
+.page.active { min-height: calc(100svh - 64px); }
 /* Calendar + Settings: constrain to viewport so nav always sits at bottom */
 #screen-app[data-page="calendar"],
 #screen-app[data-page="settings"] { height: 100dvh; }
@@ -625,6 +627,7 @@ h1, h2, h3 {
 }
 .fab-menu-item:nth-child(1) { animation-delay: 40ms; }
 .fab-menu-item:nth-child(2) { animation-delay: 80ms; }
+.fab-menu-item:nth-child(3) { animation-delay: 120ms; }
 .fab-menu-item:hover { background: var(--bg-hover); transform: translateX(-2px); }
 .fab-menu-item:active { transform: scale(0.95); background: var(--bg-hover); }
 .fab-menu-icon {
@@ -3295,7 +3298,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v179</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v180</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3594,6 +3597,10 @@ html { scroll-behavior: smooth; }
   <button class="fab-menu-item" data-fab-action="transfer">
     <span class="fab-menu-icon">↔️</span>
     <span class="fab-menu-label">Transfer</span>
+  </button>
+  <button class="fab-menu-item" data-fab-action="interest">
+    <span class="fab-menu-icon">🏦</span>
+    <span class="fab-menu-label">Interest</span>
   </button>
 </div>
 <button class="fab" id="fab-add" aria-label="Add">
@@ -7733,6 +7740,7 @@ async function confirmRecurrence(subscriptionId, specificDate = null) {
       if (card) txData.invoice_month = Invoice.computeMonthString(date, card);
     }
     const createdTx = await Data.createTransaction(txData);
+    ActivityLog.record('confirm', 'recurring', s.name);
 
     if (isIntervalSub) {
       // Add date to confirmed_dates, trim entries older than 60 days
@@ -9165,9 +9173,9 @@ const Dashboard = {
         <span class="text-mono ${cls}" style="font-size:0.875rem;font-weight:600;">${amount}</span>
       </div>`;
 
-    const itemRow = (name, amt, sign, cls) =>
+    const itemRow = (name, amt, sign, cls, date = null) =>
       `<div style="display:flex;justify-content:space-between;padding:3px 0 3px 12px;">
-        <span style="color:var(--text-tertiary);font-size:0.8125rem;">${escapeHtml(name)}</span>
+        <span style="color:var(--text-tertiary);font-size:0.8125rem;">${escapeHtml(name)}${date ? `<span style="font-size:0.6rem;opacity:0.5;margin-left:5px;">${date}</span>` : ''}</span>
         <span class="text-mono ${cls}" style="font-size:0.8125rem;">${sign}${App.formatCurrency(amt)}</span>
       </div>`;
 
@@ -9179,10 +9187,15 @@ const Dashboard = {
         <span class="text-mono" style="font-size:0.8125rem;text-decoration:line-through;color:var(--text-tertiary);">${sign}${App.formatCurrency(amt)}</span>
       </div>`;
 
+    const itemDate = s => {
+      if (s._occurrence_date) return new Date(s._occurrence_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      if (s.billing_day) return `day ${s.billing_day}`;
+      return null;
+    };
     const section = (label, pending, handled, sign, cls, total) => {
       if (!pending.length && !handled.length) return '';
       return sectionRow(label, (sign === '+' ? '+' : '-') + App.formatCurrency(total), cls)
-        + pending.map(s => itemRow(s.name, s.amount, sign, cls)).join('')
+        + pending.map(s => itemRow(s.name, s.amount, sign, cls, itemDate(s))).join('')
         + handled.map(s => handledRow(s, s.amount, sign, lsSkipIds.has(s.id))).join('');
     };
 
@@ -9323,6 +9336,31 @@ const Dashboard = {
     return JSON.parse(localStorage.getItem(`finance_skips_${ym}`) || '[]');
   },
 
+  getRecentDealt(n = 3) {
+    const now = new Date();
+    const recentYms = [0, 1, 2].map(offset => {
+      const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    });
+    const skips = recentYms.flatMap(ym =>
+      JSON.parse(localStorage.getItem(`finance_skips_${ym}`) || '[]')
+        .map(e => ({ ...e, _ym: ym, _kind: 'skip' }))
+    );
+    const skipIds = new Set(skips.map(e => e.id));
+    const pendingIds = new Set(this.calcRecurrencesPending().items.map(s => s.id));
+    const confirmed = State.subscriptions.filter(s => {
+      if (!s.is_active || s.card_id) return false;
+      if (pendingIds.has(s.id) || skipIds.has(s.id)) return false;
+      return recentYms.some(ym => s.last_confirmed_month?.startsWith(ym));
+    }).map(s => ({
+      id: s.id, name: s.name, amount: s.amount,
+      _ym: s.last_confirmed_month?.substring(0, 7) || '',
+      _kind: 'confirm',
+    }));
+    const all = [...skips, ...confirmed].sort((a, b) => b._ym.localeCompare(a._ym));
+    return all.slice(0, n);
+  },
+
   renderUpcoming(items, pendingCards = [], earlyRec = []) {
     const container = document.getElementById('dash-upcoming');
     if (!container) return;
@@ -9411,55 +9449,48 @@ const Dashboard = {
 
   renderSkipped(container) {
     const now = new Date();
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const skipKey = `finance_skips_${ym}`;
-    const lsSkips = this.getSkippedThisMonth();
-    const lsSkipIds = new Set(lsSkips.map(e => e.id));
+    const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const recent = this.getRecentDealt(3);
 
-    // Also find any subs handled this month NOT tracked in localStorage
-    // (confirmed or skipped before the fix was in place)
-    const pendingIds = new Set(this.calcRecurrencesPending().items.map(s => s.id));
-    const otherHandled = State.subscriptions.filter(s => {
-      if (!s.is_active || s.card_id) return false;
-      if (pendingIds.has(s.id) || lsSkipIds.has(s.id)) return false;
-      return s.last_confirmed_month?.startsWith(ym);
-    });
-
-    const total = lsSkips.length + otherHandled.length;
     let el = document.getElementById('dash-skipped');
-    if (!total) { if (el) el.remove(); return; }
+    if (!recent.length) { if (el) el.remove(); return; }
 
     const makeRestorePayload = e => JSON.stringify(e).replace(/'/g, '&#39;');
 
-    const skippedRows = lsSkips.map(e => `
+    const monthLabel = ym => {
+      if (!ym) return '';
+      const [y, m] = ym.split('-').map(Number);
+      return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'short' });
+    };
+
+    const rows = recent.map(e => {
+      const isSkip = e._kind === 'skip';
+      const isCurrentMonth = e._ym === currentYm;
+      const meta = `${isSkip ? 'Skipped' : 'Confirmed'} · ${monthLabel(e._ym)}`;
+      const restoreBtn = isSkip
+        ? `<button class="upcoming-confirm" data-restore-skip='${makeRestorePayload(e)}' title="Restore">↩</button>`
+        : isCurrentMonth
+          ? `<button class="upcoming-confirm" data-restore-handled="${e.id}" title="Restore">↩</button>`
+          : '';
+      return `
       <div class="upcoming-row">
-        <div class="upcoming-icon" style="opacity:0.5;">⊘</div>
+        <div class="upcoming-icon" style="opacity:0.5;">${isSkip ? '⊘' : '✓'}</div>
         <div class="upcoming-info">
           <div class="upcoming-name" style="opacity:0.65;">${escapeHtml(e.name)}</div>
-          <div class="upcoming-meta">Skipped this month</div>
+          <div class="upcoming-meta">${meta}</div>
         </div>
         <div class="upcoming-amount text-danger" style="opacity:0.6;">−${App.formatCurrency(e.amount)}</div>
-        <button class="upcoming-confirm" data-restore-skip='${makeRestorePayload(e)}' title="Restore">↩</button>
-      </div>`).join('');
-
-    const handledRows = otherHandled.map(s => `
-      <div class="upcoming-row">
-        <div class="upcoming-icon" style="opacity:0.5;">✓</div>
-        <div class="upcoming-info">
-          <div class="upcoming-name" style="opacity:0.65;">${escapeHtml(s.name)}</div>
-          <div class="upcoming-meta">Confirmed this month</div>
-        </div>
-        <div class="upcoming-amount text-danger" style="opacity:0.6;">−${App.formatCurrency(s.amount)}</div>
-        <button class="upcoming-confirm" data-restore-handled="${s.id}" title="Restore">↩</button>
-      </div>`).join('');
+        ${restoreBtn}
+      </div>`;
+    }).join('');
 
     const html = `
       <div class="card upcoming-card fade-in" id="dash-skipped" style="margin-top:var(--space-3);">
         <div class="upcoming-header">
-          <span class="upcoming-title">Handled this month</span>
-          <span class="upcoming-count">${total}</span>
+          <span class="upcoming-title">Recently handled</span>
+          <span class="upcoming-count">${recent.length}</span>
         </div>
-        ${skippedRows}${handledRows}
+        ${rows}
       </div>`;
 
     if (el) el.outerHTML = html;
@@ -9475,6 +9506,7 @@ const Dashboard = {
           } else {
             await Data.updateSubscription(e.id, { last_confirmed_month: e.monthKeyBefore }, { silent: true });
           }
+          const skipKey = `finance_skips_${e._ym || currentYm}`;
           const cur = JSON.parse(localStorage.getItem(skipKey) || '[]').filter(x => !(x.id === e.id && x.specificDate === e.specificDate));
           localStorage.setItem(skipKey, JSON.stringify(cur));
           Dashboard.render();
@@ -9812,6 +9844,19 @@ document.querySelectorAll('[data-fab-action]').forEach(btn => {
         return toast('You need at least one account', 'error');
       }
       openTransferForm();
+    } else if (action === 'interest') {
+      const user = Auth.getSession()?.userId || 'pv';
+      const sofiAcc = State.accounts.find(a => a.name.toLowerCase().includes('sofi') && a.owner === user)
+                   || State.accounts.find(a => a.name.toLowerCase().includes('sofi'));
+      openTransactionForm({
+        type: 'income',
+        amount: '',
+        description: 'Interest Earned',
+        date: localToday(),
+        account_id: sofiAcc?.id || (State.accounts.find(a => a.owner === user) || State.accounts[0])?.id || null,
+        card_id: null,
+        owner: user,
+      });
     }
   });
 });
