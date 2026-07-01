@@ -9162,7 +9162,7 @@ const Dashboard = {
     });
 
     const pendingBills   = pendingRec.items.filter(s => s.type === 'expense' && s.account_id);
-    const pendingSubs    = pendingRec.items.filter(s => s.type === 'expense' && s.card_id);
+    const pendingSubs    = pendingRec.items.filter(s => s.type === 'expense' && s.card_id && !s._tracked);
     const pendingIncome  = pendingRec.items.filter(s => s.type === 'income');
     const handledBills   = handledThisMonth.filter(s => s.type === 'expense' && s.account_id);
     const handledSubs    = handledThisMonth.filter(s => s.type === 'expense' && s.card_id);
@@ -9267,8 +9267,13 @@ const Dashboard = {
       if (!s.is_active) return;
       const amount = Number(s.amount) || 0;
 
-      // Card-charged subs are already inside the card invoice total — skip them
-      if (s.card_id) return;
+      // Card-charged subs: include in upcoming for tracking, but don't add to financial totals
+      if (s.card_id) {
+        if (!s.last_confirmed_month || !s.last_confirmed_month.startsWith(ym.substring(0, 7))) {
+          items.push({ ...s, _tracked: true });
+        }
+        return;
+      }
 
       // Interval-based (weekly / quinzenal) — generate each occurrence as a separate item
       if (isIntervalBased(s) && s.billing_start_date) {
@@ -9349,15 +9354,25 @@ const Dashboard = {
     );
     const skipIds = new Set(skips.map(e => e.id));
     const confirmed = State.subscriptions.filter(s => {
-      if (!s.is_active || s.card_id) return false;
+      if (!s.is_active) return false;
       if (skipIds.has(s.id)) return false;
       return recentYms.some(ym => s.last_confirmed_month?.startsWith(ym));
     }).map(s => ({
-      id: s.id, name: s.name, amount: s.amount,
+      id: s.id, name: s.name, amount: s.amount, type: s.type,
       _ym: s.last_confirmed_month?.substring(0, 7) || '',
       _kind: 'confirm',
     }));
-    const all = [...skips, ...confirmed].sort((a, b) => b._ym.localeCompare(a._ym));
+    // Card invoice payments (is_payment=true transactions from recent months)
+    const recentDateCutoff = (() => {
+      const d = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
+    })();
+    const cardPayments = (State.transactions || []).filter(t => t.is_payment && t.date >= recentDateCutoff).map(t => {
+      const card = State.cards.find(c => c.id === t.card_id);
+      return { id: 'pay_' + t.id, name: (card?.name || 'Card') + ' paid',
+        amount: Number(t.amount) || 0, type: 'expense', _ym: t.date?.substring(0, 7) || '', _kind: 'payment' };
+    });
+    const all = [...skips, ...cardPayments, ...confirmed].sort((a, b) => b._ym.localeCompare(a._ym));
     return all.slice(0, n);
   },
 
@@ -9465,21 +9480,27 @@ const Dashboard = {
 
     const rows = recent.map(e => {
       const isSkip = e._kind === 'skip';
+      const isPayment = e._kind === 'payment';
+      const isIncome = e.type === 'income';
       const isCurrentMonth = e._ym === currentYm;
-      const meta = `${isSkip ? 'Skipped' : 'Confirmed'} · ${monthLabel(e._ym)}`;
+      const metaLabel = isSkip ? 'Skipped' : (isPayment ? 'Paid' : 'Confirmed');
+      const meta = `${metaLabel} · ${monthLabel(e._ym)}`;
       const restoreBtn = isSkip
         ? `<button class="upcoming-confirm" data-restore-skip='${makeRestorePayload(e)}' title="Restore">↩</button>`
-        : isCurrentMonth
+        : (isCurrentMonth && !isPayment)
           ? `<button class="upcoming-confirm" data-restore-handled="${e.id}" title="Restore">↩</button>`
           : '';
+      const icon = isSkip ? '⊘' : (isPayment ? '💳' : '✓');
+      const sign = isIncome ? '+' : '−';
+      const amtClass = isIncome ? 'text-success' : 'text-danger';
       return `
       <div class="upcoming-row">
-        <div class="upcoming-icon" style="opacity:0.5;">${isSkip ? '⊘' : '✓'}</div>
+        <div class="upcoming-icon" style="opacity:0.5;">${icon}</div>
         <div class="upcoming-info">
           <div class="upcoming-name" style="opacity:0.65;">${escapeHtml(e.name)}</div>
           <div class="upcoming-meta">${meta}</div>
         </div>
-        <div class="upcoming-amount text-danger" style="opacity:0.6;">−${App.formatCurrency(e.amount)}</div>
+        <div class="upcoming-amount ${amtClass}" style="opacity:0.6;">${sign}${App.formatCurrency(e.amount)}</div>
         ${restoreBtn}
       </div>`;
     }).join('');
@@ -9855,7 +9876,7 @@ document.querySelectorAll('[data-fab-action]').forEach(btn => {
         date: localToday(),
         account_id: sofiAcc?.id || (State.accounts.find(a => a.owner === user) || State.accounts[0])?.id || null,
         card_id: null,
-        category_id: '7759053f-f6e0-4749-ac42-789824559d97',
+        category_id: '62b71fca-e357-475d-91dc-4db096aff558',
         owner: user,
       });
     }
