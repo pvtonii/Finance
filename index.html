@@ -9163,10 +9163,8 @@ const Dashboard = {
     });
 
     const pendingBills   = pendingRec.items.filter(s => s.type === 'expense' && s.account_id);
-    const pendingSubs    = pendingRec.items.filter(s => s.type === 'expense' && s.card_id && !s._tracked);
     const pendingIncome  = pendingRec.items.filter(s => s.type === 'income');
     const handledBills   = handledThisMonth.filter(s => s.type === 'expense' && s.account_id);
-    const handledSubs    = handledThisMonth.filter(s => s.type === 'expense' && s.card_id);
     const handledIncome  = handledThisMonth.filter(s => s.type === 'income');
 
     const sectionRow = (label, amount, cls, sub = '') => `
@@ -9241,7 +9239,6 @@ const Dashboard = {
         ${sectionRow('Checking balance', App.formatCurrency(liquidBalance), liquidBalance >= 0 ? 'text-success' : 'text-danger')}
         ${cardsDueItems.length ? sectionRow(`Cards due (${monthName})`, '-' + App.formatCurrency(cardsDue), 'text-danger') + cardsDueItems.map(c => itemRow(c.name, c.amount, '-', 'text-danger', c.dueDateStr)).join('') : ''}
         ${section('Bills', pendingBills, handledBills, '-', 'text-danger', pendingRec.accountExpense)}
-        ${section('Subscriptions', pendingSubs, handledSubs, '-', 'text-danger', pendingRec.cardExpense)}
         ${section('Income', pendingIncome, handledIncome, '+', 'text-success', pendingRec.income)}
         ${divider}
         <div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;">
