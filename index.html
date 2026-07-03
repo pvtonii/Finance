@@ -9598,10 +9598,7 @@ const Dashboard = {
     const dueDateLabel = dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const dateStyle = isNextMonth ? 'color:#f59e0b;' : '';
     const openMonth = Invoice.computeMonthString(localToday(), card);
-    // Badge only shows if the invoice is still accumulating (closing date is strictly in the future)
-    const nextClosing = Invoice.nextClosingDate(card);
-    const nextClosingStr = `${nextClosing.getFullYear()}-${String(nextClosing.getMonth()+1).padStart(2,'0')}-${String(nextClosing.getDate()).padStart(2,'0')}`;
-    const isOpen = openMonth === m && nextClosingStr > localToday();
+    const isOpen = openMonth === m;
     const openBadge = isOpen ? `<span style="font-size:0.6rem;font-weight:600;color:#f59e0b;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);border-radius:4px;padding:1px 4px;margin-left:4px;letter-spacing:0.03em;">open</span>` : '';
     return `
       <div class="upcoming-row">
