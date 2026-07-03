@@ -4636,9 +4636,14 @@ const Invoice = {
   },
 
   /**
-   * Verifica se uma compra está em "zona ambígua":
-   * dentro de 3 dias antes ou depois do fechamento do cartão.
-   * Nesses casos, o app sugere uma fatura mas o usuário pode mover.
+   * Verifica se uma compra está em "zona ambígua" perto do fechamento.
+   * Janela ASSIMÉTRICA: 3 dias ANTES até 1 dia DEPOIS do fechamento.
+   *
+   * Motivo: a compra "posta" no banco 0-3 dias úteis depois da data da compra,
+   * e o banco fecha a fatura pelo que postou. Logo o atraso empurra sempre pra
+   * FRENTE — uma compra pouco antes do fechamento pode escorregar pra próxima
+   * fatura (ambíguo), mas uma compra depois do fechamento quase nunca volta pra
+   * fatura já fechada. Por isso a janela é larga antes e curta depois.
    */
   isAmbiguous(purchaseDate, card) {
     const date = typeof purchaseDate === 'string' ? this._parseLocalDate(purchaseDate) : purchaseDate;
@@ -4651,8 +4656,8 @@ const Invoice = {
     const diffMs = date.getTime() - closingThisMonth.getTime();
     const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
-    // Zona ambígua: ±3 dias
-    return Math.abs(diffDays) <= 3;
+    // Zona ambígua: até 3 dias antes, até 1 dia depois
+    return diffDays >= -3 && diffDays <= 1;
   },
 
   /**
