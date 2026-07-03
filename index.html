@@ -3302,7 +3302,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v180.03</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v180.04</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3511,7 +3511,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 180.03 · Jul 2, 2026</div>
+          <div class="app-version">Version 180.04 · Jul 2, 2026</div>
         </div>
       </div>
     </section>
@@ -4443,68 +4443,34 @@ const Invoice = {
   /**
    * Returns ranking info for a card based on TODAY's purchase:
    *   - daysToDue: how many days until you'd pay a purchase made now
-   *   - dueDate: the date when that purchase would be due
-   *   - state: 'safe' | 'ambiguous' | 'just-closed'
-   *   - ambiguousRange: if ambiguous, { min, max, earlyDue, lateDue }
+   *   - dueDate: the date when that purchase would be due (always ONE deterministic date)
+   *   - state: 'safe' | 'just-closed'
    *   - availableCredit: how much room left
    *   - hasNoCredit: true if used >= limit
+   *
+   * Fixed rule (no ambiguity window): a purchase made up to 1 day AFTER closing
+   * still counts toward the invoice that just closed (bank posting lag grace),
+   * same buffer used by isAmbiguous(). Every other day uses the plain
+   * day <= closing_day → this cycle / day > closing_day → next cycle rule.
    */
   rankCardForToday(card, today = new Date()) {
     const closing = Number(card.closing_day);
     if (!closing) return null;
 
-    const todayDay = today.getDate();
-    // Distance from today to closing day (always positive, 0-15ish)
-    const daysToClosing = Math.min(
-      Math.abs(todayDay - closing),
-      31 - Math.abs(todayDay - closing)
-    );
-    const AMBIGUOUS_WINDOW = 3;
-
-    // Just-closed: today is right after closing (1-3 days)
-    // we figure this by computing if closing happened in the last 3 days
     const todayClone = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const closingThisMonth = new Date(today.getFullYear(), today.getMonth(), closing);
     const daysSinceClosing = Math.floor((todayClone - closingThisMonth) / (1000 * 60 * 60 * 24));
 
-    // State detection
-    let state = 'safe';
-    let ambiguousRange = null;
+    // 1-day-after-closing grace: treat as if the purchase were made on the closing day itself
+    const refDate = daysSinceClosing === 1
+      ? new Date(today.getFullYear(), today.getMonth(), closing)
+      : todayClone;
 
-    if (daysToClosing <= AMBIGUOUS_WINDOW) {
-      // We're in the window — could go to either invoice
-      state = 'ambiguous';
-      // Early scenario: purchase goes to closer invoice
-      const closingDate = this.nextClosingDate(card, today);
-      const dueDay = Number(card.due_day);
-      // "Early due" = if it cuts into THIS cycle (sooner)
-      // "Late due" = if it goes to NEXT cycle
-      let earlyDue, lateDue;
-      if (todayDay <= closing) {
-        // Today could still go to current cycle (early) OR next cycle (late)
-        earlyDue = dueDay > closing
-          ? new Date(closingDate.getFullYear(), closingDate.getMonth(), dueDay)
-          : new Date(closingDate.getFullYear(), closingDate.getMonth() + 1, dueDay);
-        const nextClose = new Date(closingDate.getFullYear(), closingDate.getMonth() + 1, closing);
-        lateDue = dueDay > closing
-          ? new Date(nextClose.getFullYear(), nextClose.getMonth(), dueDay)
-          : new Date(nextClose.getFullYear(), nextClose.getMonth() + 1, dueDay);
-      } else {
-        // Today already past closing — went to next cycle (early) but operator may delay to one after (late)
-        earlyDue = this.nextDueDate(card, today);
-        const further = new Date(today.getFullYear(), today.getMonth() + 1, todayDay);
-        lateDue = this.nextDueDate(card, further);
-      }
-      const minDays = Math.floor((earlyDue - todayClone) / (1000 * 60 * 60 * 24));
-      const maxDays = Math.floor((lateDue - todayClone) / (1000 * 60 * 60 * 24));
-      ambiguousRange = { min: minDays, max: maxDays, earlyDue, lateDue };
-    } else if (daysSinceClosing >= 0 && daysSinceClosing <= 5) {
-      // Just closed within last 5 days — typically the longest cycle
-      state = 'just-closed';
-    }
-
-    const dueDate = this.nextDueDate(card, today);
+    const dueDate = this.nextDueDate(card, refDate);
     const daysToDue = Math.floor((dueDate - todayClone) / (1000 * 60 * 60 * 24));
+
+    // "Just closed" is a purely informational badge — doesn't change the date shown
+    const state = (daysSinceClosing >= 0 && daysSinceClosing <= 5) ? 'just-closed' : 'safe';
 
     // Credit availability
     const used = this.getCreditUsed(card.id);
@@ -4517,7 +4483,6 @@ const Invoice = {
       state,
       daysToDue,
       dueDate,
-      ambiguousRange,
       availableCredit,
       hasNoCredit,
     };
@@ -8516,9 +8481,7 @@ const Cards = {
     allRankings.sort((a, b) => {
       if (a.hasNoCredit && !b.hasNoCredit) return 1;
       if (!a.hasNoCredit && b.hasNoCredit) return -1;
-      const aDays = a.state === 'ambiguous' ? a.ambiguousRange.min : a.daysToDue;
-      const bDays = b.state === 'ambiguous' ? b.ambiguousRange.min : b.daysToDue;
-      return bDays - aDays;
+      return b.daysToDue - a.daysToDue;
     });
     const top3 = allRankings.slice(0, 3);
     const medals = ['🥇', '🥈', '🥉'];
@@ -8650,13 +8613,6 @@ const Cards = {
     if (r.hasNoCredit) {
       mainLine = `<span class="best-no-credit">No credit available</span>`;
       stateClass = 'no-credit';
-    } else if (r.state === 'ambiguous') {
-      const { min, max, earlyDue, lateDue } = r.ambiguousRange;
-      const earlyStr = this.formatShortDate(earlyDue);
-      const lateStr = this.formatShortDate(lateDue);
-      mainLine = `${min}–${max} days · pay ${earlyStr} or ${lateStr}`;
-      stateClass = 'ambiguous';
-      stateIcon = '<span class="best-warn">⚠️ Closing window</span>';
     } else if (r.state === 'just-closed') {
       mainLine = `${r.daysToDue} days · pay ${dueDateStr}`;
       stateClass = 'just-closed';
@@ -8687,15 +8643,12 @@ const Cards = {
     amazon.sort((a, b) => {
       if (a.hasNoCredit && !b.hasNoCredit) return 1;
       if (!a.hasNoCredit && b.hasNoCredit) return -1;
-      const aDays = a.state === 'ambiguous' ? a.ambiguousRange.min : a.daysToDue;
-      const bDays = b.state === 'ambiguous' ? b.ambiguousRange.min : b.daysToDue;
-      return bDays - aDays;
+      return b.daysToDue - a.daysToDue;
     });
 
     const rowHtml = (r, isWinner) => {
       const card = r.card;
-      const days = r.hasNoCredit ? null : (r.state === 'ambiguous' ? r.ambiguousRange.min : r.daysToDue);
-      const dueStr = r.hasNoCredit ? 'No credit' : `${days} days · pay ${this.formatShortDate(r.dueDate)}`;
+      const dueStr = r.hasNoCredit ? 'No credit' : `${r.daysToDue} days · pay ${this.formatShortDate(r.dueDate)}`;
       const avatar = `<span class="inline-avatar ${card.owner}" style="width:16px;height:16px;font-size:0.5625rem;">${card.owner === 'pv' ? 'P' : 'G'}</span>`;
       return `
         <div class="best-costco-pick ${isWinner ? 'winner' : 'loser'}">
