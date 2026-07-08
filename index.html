@@ -3307,7 +3307,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v180.06</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v180.07</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3516,7 +3516,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 180.06 · Jul 2, 2026</div>
+          <div class="app-version">Version 180.07 · Jul 2, 2026</div>
         </div>
       </div>
     </section>
@@ -9199,6 +9199,10 @@ const Dashboard = {
           <span class="text-mono" style="font-size:0.8125rem;color:${color};">${sign}${App.formatCurrency(item.amount)}</span>
         </div>`;
       }).join('')}
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;">
+        <span style="font-size:0.8125rem;font-weight:600;color:var(--text-secondary);">Subtotal early ${earlyNext.nextMonthName}</span>
+        <span class="text-mono" style="font-size:0.8125rem;font-weight:600;color:${(earlyNext.incomeTotal - earlyNext.total) >= 0 ? 'var(--success)' : 'var(--danger)'};">${(earlyNext.incomeTotal - earlyNext.total) >= 0 ? '+' : '−'}${App.formatCurrency(Math.abs(earlyNext.incomeTotal - earlyNext.total))}</span>
+      </div>
       <div style="border-top:3px solid var(--border);margin:8px 0;"></div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;">
         <span style="font-weight:600;">Total projetado</span>
