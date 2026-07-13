@@ -3121,6 +3121,14 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
 .upcoming-row:first-child {
   padding-top: 0;
 }
+.upcoming-row.outline-today {
+  box-shadow: inset 0 0 0 1px rgba(251,191,36,0.45);
+  border-radius: var(--radius-md);
+}
+.upcoming-row.outline-past {
+  box-shadow: inset 0 0 0 1px rgba(168,85,247,0.45);
+  border-radius: var(--radius-md);
+}
 .upcoming-icon {
   width: 36px;
   height: 36px;
@@ -3307,7 +3315,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v180.07</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v180.08</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3516,7 +3524,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 180.07 · Jul 2, 2026</div>
+          <div class="app-version">Version 180.08 · Jul 2, 2026</div>
         </div>
       </div>
     </section>
@@ -8842,6 +8850,15 @@ const Cards = {
 const Dashboard = {
   upcomingView: 'current', // 'current' | 'past'
 
+  /** Returns a CSS class for an upcoming-row's outline based on its date vs today */
+  dateOutlineClass(dateStr) {
+    if (!dateStr) return '';
+    const today = localToday();
+    if (dateStr === today) return 'outline-today';
+    if (dateStr < today) return 'outline-past';
+    return '';
+  },
+
   render() {
     const today = this.calcTodayBalance();
 
@@ -9546,7 +9563,7 @@ const Dashboard = {
     const amountClass = isIncome ? 'text-success' : 'text-danger';
     const dateLabel = new Date(s._past_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     return `
-      <div class="upcoming-row">
+      <div class="upcoming-row ${this.dateOutlineClass(s._past_date)}">
         <div class="upcoming-icon" style="opacity:0.6;">${icon}</div>
         <div class="upcoming-info">
           <div class="upcoming-name" style="opacity:0.7;">${escapeHtml(s.name)}</div>
@@ -9567,12 +9584,13 @@ const Dashboard = {
     const now = new Date();
     const isNextMonth = dueDate.getFullYear() !== now.getFullYear() || dueDate.getMonth() !== now.getMonth();
     const dueDateLabel = dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const dueDateStr = `${dueDate.getFullYear()}-${String(dueDate.getMonth()+1).padStart(2,'0')}-${String(dueDate.getDate()).padStart(2,'0')}`;
     const dateStyle = isNextMonth ? 'color:#f59e0b;' : '';
     const openMonth = Invoice.computeMonthString(localToday(), card);
     const isOpen = openMonth === m;
     const openBadge = isOpen ? `<span style="font-size:0.6rem;font-weight:600;color:#f59e0b;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);border-radius:4px;padding:1px 4px;margin-left:4px;letter-spacing:0.03em;">open</span>` : '';
     return `
-      <div class="upcoming-row">
+      <div class="upcoming-row ${this.dateOutlineClass(dueDateStr)}">
         <div class="upcoming-icon">💳</div>
         <div class="upcoming-info">
           <div class="upcoming-name">${escapeHtml(card.name)}${openBadge}</div>
@@ -9603,9 +9621,13 @@ const Dashboard = {
     const intervalLabel = s.billing_frequency === 'weekly' ? '↻ 1 week' : '↻ 2 weeks';
     const biweeklyBadge = s._occurrence_date ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;margin-left:4px;">${intervalLabel}</span>` : '';
     const confirmDate = s._early_date || s._occurrence_date || '';
+    const now = new Date();
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const fallbackDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(Math.min(Number(s.billing_day)||1, lastDay)).padStart(2,'0')}`;
+    const itemDate = s._early_date || s._occurrence_date || fallbackDate;
 
     return `
-      <div class="upcoming-row">
+      <div class="upcoming-row ${this.dateOutlineClass(itemDate)}">
         <div class="upcoming-icon">${icon}</div>
         <div class="upcoming-info">
           <div class="upcoming-name">${escapeHtml(s.name)}${biweeklyBadge}</div>
