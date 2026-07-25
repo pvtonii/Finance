@@ -3326,7 +3326,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v180.10</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v181</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3535,7 +3535,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 180.10 · Jul 17, 2026</div>
+          <div class="app-version">Version 181 · Jul 24, 2026</div>
         </div>
       </div>
     </section>
@@ -4519,10 +4519,10 @@ const Invoice = {
     );
   },
 
-  /** Total a pagar em uma fatura */
+  /** Total a pagar em uma fatura (refunds — type 'income' — abatem o total) */
   getInvoiceTotal(cardId, invoiceMonth) {
     return this.getInvoiceTransactions(cardId, invoiceMonth)
-      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+      .reduce((sum, t) => sum + (t.type === 'income' ? -1 : 1) * (Number(t.amount) || 0), 0);
   },
 
   /** Lista invoice_months únicos de um cartão (ordenados desc) */
@@ -4558,7 +4558,8 @@ const Invoice = {
       if (t.card_id !== cardId) return;
       if (!t.invoice_month) return;
       if (t.invoice_month < currentMonth) return; // past invoices don't reserve credit
-      byInvoice[t.invoice_month] = (byInvoice[t.invoice_month] || 0) + (Number(t.amount) || 0);
+      const signed = (t.type === 'income' ? -1 : 1) * (Number(t.amount) || 0);
+      byInvoice[t.invoice_month] = (byInvoice[t.invoice_month] || 0) + signed;
     });
 
     // Subtract payments per invoice
@@ -4580,9 +4581,7 @@ const Invoice = {
 
     let total = 0;
     State.cards.forEach(card => {
-      const charged = State.transactions
-        .filter(t => t.card_id === card.id && t.invoice_month === currentMonth)
-        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+      const charged = this.getInvoiceTotal(card.id, currentMonth);
       const paid = this.getInvoicePaid(card.id, currentMonth);
       total += Math.max(0, charged - paid);
     });
@@ -5721,6 +5720,7 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
     });
   });
 
+  attachCurrencyMask(document.getElementById('sub-amount'));
   setTimeout(() => document.getElementById('sub-amount').focus(), 300);
 
   // Save
@@ -6878,6 +6878,7 @@ function openTransactionForm(transaction = null) {
   // Listener pra atualizar aviso quando trocar a data
   document.getElementById('tx-date').addEventListener('change', updateAmbiguousWarning);
 
+  attachCurrencyMask(document.getElementById('tx-amount'));
   setTimeout(() => document.getElementById('tx-amount').focus(), 300);
 
   // Salvar
@@ -7191,6 +7192,7 @@ function openRefundForm(originalTx) {
     </div>
   `);
 
+  attachCurrencyMask(document.getElementById('refund-amount'));
   setTimeout(() => document.getElementById('refund-amount').focus(), 300);
 
   document.getElementById('refund-save').addEventListener('click', async () => {
@@ -7242,6 +7244,20 @@ function openRefundForm(originalTx) {
 // Helper pra formatar valor no input
 function formatAmountInput(value) {
   return Number(value).toFixed(2);
+}
+
+// Nubank-style cents-first amount input: typing digits builds up the value
+// from the right (e.g. "1" "2" "3" "4" → $1.23 → $12.34), like a POS terminal.
+function attachCurrencyMask(el) {
+  if (!el || el._currencyMaskAttached) return;
+  el._currencyMaskAttached = true;
+  el.addEventListener('focus', () => el.select());
+  el.addEventListener('input', () => {
+    const digits = el.value.replace(/\D/g, '');
+    if (!digits) { el.value = ''; return; }
+    const cents = parseInt(digits, 10);
+    el.value = (cents / 100).toFixed(2);
+  });
 }
 
 /* ============================================
@@ -7461,6 +7477,7 @@ function openTransferForm(opts = null) {
   }
   rerenderPickers();
 
+  attachCurrencyMask(document.getElementById('tr-amount'));
   setTimeout(() => document.getElementById('tr-amount').focus(), 300);
 
   // Save
@@ -7671,6 +7688,7 @@ function openPayStatementForm(cardId, invoiceMonth) {
   }
   renderPicker();
 
+  attachCurrencyMask(document.getElementById('pay-amount'));
   setTimeout(() => document.getElementById('pay-amount').focus(), 300);
 
   // Save
@@ -8812,6 +8830,8 @@ const Cards = {
     const installmentLabel = t.installments_total > 1
       ? `<span class="card-badge installments">${t.installment_number}/${t.installments_total}</span>`
       : '';
+    const isRefund = t.type === 'income';
+    const refundLabel = isRefund ? `<span class="card-badge" style="background:rgba(48,209,88,0.15);color:var(--success);">Refund</span>` : '';
 
     return `
       <div class="tx-row" data-edit-tx="${t.id}">
@@ -8821,11 +8841,12 @@ const Cards = {
           <div class="tx-meta">
             <span>${this.formatShortDate(this.parseDate(t.date))}</span>
             ${installmentLabel ? `<span>·</span>${installmentLabel}` : ''}
+            ${refundLabel ? `<span>·</span>${refundLabel}` : ''}
             <span>·</span>
             <span class="owner-tag ${t.owner}">${this.ownerLabel(t.owner)}</span>
           </div>
         </div>
-        <div class="tx-amount expense">-${App.formatCurrency(t.amount)}</div>
+        <div class="tx-amount ${isRefund ? 'income' : 'expense'}">${isRefund ? '+' : '-'}${App.formatCurrency(t.amount)}</div>
       </div>
     `;
   },
@@ -9507,10 +9528,10 @@ const Dashboard = {
 
     const makeRestorePayload = e => JSON.stringify(e).replace(/'/g, '&#39;');
 
-    const monthLabel = ym => {
-      if (!ym) return '';
-      const [y, m] = ym.split('-').map(Number);
-      return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'short' });
+    const dateLabel = dateStr => {
+      if (!dateStr) return '';
+      const [y, m, d] = dateStr.split('-').map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     };
 
     const rows = recent.map(e => {
@@ -9519,7 +9540,7 @@ const Dashboard = {
       const isIncome = e.type === 'income';
       const isCurrentMonth = e._ym === currentYm;
       const metaLabel = isSkip ? 'Skipped' : (isPayment ? 'Paid' : 'Confirmed');
-      const meta = `${metaLabel} · ${monthLabel(e._ym)}`;
+      const meta = `${metaLabel} · ${dateLabel(e._date)}`;
       const restoreBtn = isSkip
         ? `<button class="upcoming-confirm" data-restore-skip='${makeRestorePayload(e)}' title="Restore">↩</button>`
         : !isPayment
