@@ -3326,7 +3326,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v181.01</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v182</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3535,7 +3535,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 181.01 · Jul 24, 2026</div>
+          <div class="app-version">Version 182 · Jul 24, 2026</div>
         </div>
       </div>
     </section>
@@ -3885,6 +3885,27 @@ function categoryPath(categoryId) {
   if (cat.parent_id == null) return { parent: cat, child: null };
   const parent = State.categories.find(c => c.id === cat.parent_id) || null;
   return { parent, child: cat };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Tags helpers ──────────────────────────────────────────────────────────────
+/** All unique tags used across every transaction (unique, sorted) */
+function allTags() {
+  const set = new Set();
+  State.transactions.forEach(tx => {
+    (tx.tags || []).forEach(tg => set.add(tg));
+  });
+  return [...set].sort();
+}
+
+/** Navigate to Transactions filtered by a single tag (reuses the existing #tag search) */
+function filterTransactionsByTag(tag) {
+  Transactions.searchTerm = '#' + tag;
+  const searchInput = document.getElementById('tx-search');
+  const searchClear = document.getElementById('tx-search-clear');
+  if (searchInput) searchInput.value = '#' + tag;
+  if (searchClear) searchClear.style.display = '';
+  showPage('transactions'); // already calls Transactions.render()
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -6087,7 +6108,7 @@ const Transactions = {
       : '';
 
     const tagsBadges = (t.tags && t.tags.length)
-      ? t.tags.map(tg => `<span class="tx-tag">#${escapeHtml(tg)}</span>`).join('')
+      ? t.tags.map(tg => `<span class="tx-tag" data-filter-tag="${escapeHtml(tg)}" style="cursor:pointer;">#${escapeHtml(tg)}</span>`).join('')
       : '';
     const isRefund = !!t.is_refund;
     const hasRefund = !isRefund && State.transactions.some(r => r.original_tx_id === t.id);
@@ -6407,15 +6428,6 @@ function openTransactionForm(transaction = null) {
   const tagChipsEl = document.getElementById('tx-tag-chips');
   const tagSuggestEl = document.getElementById('tx-tag-suggestions');
 
-  // Gather all existing tags across transactions (unique, sorted)
-  function allKnownTags() {
-    const set = new Set();
-    State.transactions.forEach(tx => {
-      (tx.tags || []).forEach(tg => set.add(tg));
-    });
-    return [...set].sort();
-  }
-
   function normalizeTag(raw) {
     return raw.replace(/^#+/, '').trim().toLowerCase().replace(/\s+/g, '');
   }
@@ -6444,7 +6456,7 @@ function openTransactionForm(transaction = null) {
 
   function showSuggestions(query) {
     const q = normalizeTag(query);
-    const known = allKnownTags().filter(tg =>
+    const known = allTags().filter(tg =>
       !selectedTags.includes(tg) && (q === '' || tg.includes(q))
     );
     if (!known.length) {
@@ -7887,6 +7899,7 @@ async function skipRecurrence(subscriptionId, specificDate = null) {
  * ============================================ */
 const Insights = {
   reportMonth: (() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })(),
+  tagsYear: 'all',
 
   render() {
     const container = document.getElementById('insights-page-content');
@@ -7895,6 +7908,7 @@ const Insights = {
       ${this.renderMonthlyReport()}
       ${this.renderIncomeUsage()}
       ${this.renderTopCategories()}
+      ${this.renderTagsReport()}
       ${this.renderMonthlyComparison()}
       ${this.renderWeekdayHeatmap()}
     `;
@@ -8119,6 +8133,65 @@ const Insights = {
             </div>
           `;
         }).join('')}
+      </div>
+    `;
+  },
+
+  // ============ Section 2b: Tags — total spent per tag, filterable by year ============
+  /** ['all', ...years found in transaction dates, ascending] */
+  getTagYears() {
+    const years = new Set();
+    State.transactions.forEach(t => { if (t.date) years.add(t.date.substring(0, 4)); });
+    return ['all', ...Array.from(years).sort()];
+  },
+
+  renderTagsReport() {
+    const tags = allTags();
+    const year = this.tagsYear;
+    const yearLabel = year === 'all' ? 'All time' : year;
+    const yearNav = `
+      <div class="tx-month-nav" id="insights-tags-year-nav" style="background:var(--bg-tertiary);border:1px solid var(--border-subtle);">
+        <button data-tags-year-prev>‹</button>
+        <span class="month-label" style="font-size:0.6875rem;font-weight:600;padding:var(--space-2) var(--space-1);min-width:70px;text-align:center;cursor:default;">${escapeHtml(yearLabel)}</span>
+        <button data-tags-year-next>›</button>
+      </div>
+    `;
+    const header = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3);">
+        <div class="insights-section-title" style="margin-bottom:0;">Tags</div>
+        ${yearNav}
+      </div>
+    `;
+
+    if (!tags.length) {
+      return `<div class="insights-card">${header}<div class="empty-state-text">No tags used yet.</div></div>`;
+    }
+
+    const rows = tags.map(tag => {
+      const txs = State.transactions.filter(t =>
+        (t.tags || []).includes(tag) &&
+        this.isSpending(t) &&
+        (year === 'all' || (t.date || '').startsWith(year))
+      );
+      const total = txs.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      return { tag, total, count: txs.length };
+    }).filter(r => r.count > 0).sort((a, b) => b.total - a.total);
+
+    if (!rows.length) {
+      return `<div class="insights-card">${header}<div class="empty-state-text">No tagged spending in ${escapeHtml(yearLabel)}.</div></div>`;
+    }
+
+    const max = rows[0].total;
+    return `
+      <div class="insights-card">
+        ${header}
+        ${rows.map(r => `
+          <div class="report-row" data-filter-tag="${escapeHtml(r.tag)}" style="cursor:pointer;">
+            <div class="report-label">#${escapeHtml(r.tag)}</div>
+            <div class="report-bar-wrap"><div class="report-bar-track"><div class="report-bar-fill" style="width:${(r.total/max*100).toFixed(1)}%;"></div></div></div>
+            <div class="report-amount">${App.formatCurrency(r.total)}</div>
+          </div>
+        `).join('')}
       </div>
     `;
   },
@@ -9971,6 +10044,15 @@ if (historyClearBtn) {
 }
 
 document.addEventListener('click', (e) => {
+  // Tags report / tag chips — tap a tag anywhere to filter Transactions by it.
+  // Checked first so it wins over an enclosing row's own click behavior (e.g. data-edit-tx).
+  const tagEl = e.target.closest('[data-filter-tag]');
+  if (tagEl) {
+    e.stopPropagation();
+    filterTransactionsByTag(tagEl.dataset.filterTag);
+    return;
+  }
+
   const addBtn = e.target.closest('[data-add]');
   if (addBtn) {
     if (!db) return toast('Set up Supabase first (Connection tab)', 'error');
@@ -10138,6 +10220,21 @@ document.addEventListener('click', (e) => {
     Insights.reportMonth = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0');
     Insights.render(); return;
   }
+
+  // Tags report — year navigation
+  if (e.target.closest('[data-tags-year-prev]')) {
+    const years = Insights.getTagYears();
+    const idx = Math.max(0, years.indexOf(Insights.tagsYear) - 1);
+    Insights.tagsYear = years[idx];
+    Insights.render(); return;
+  }
+  if (e.target.closest('[data-tags-year-next]')) {
+    const years = Insights.getTagYears();
+    const idx = Math.min(years.length - 1, years.indexOf(Insights.tagsYear) + 1);
+    Insights.tagsYear = years[idx];
+    Insights.render(); return;
+  }
+
 
   if (e.target.closest('[data-month-prev]')) {
     const cur = Transactions.filterMonth;
