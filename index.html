@@ -3326,7 +3326,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v182</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v182.01</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3535,7 +3535,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 182 · Jul 24, 2026</div>
+          <div class="app-version">Version 182.01 · Jul 24, 2026</div>
         </div>
       </div>
     </section>
@@ -7949,7 +7949,7 @@ const Insights = {
     spending.filter(t => t.card_id).forEach(t => {
       const card = State.cards.find(c => c.id === t.card_id);
       if (!card) return;
-      cardMap[card.id] = cardMap[card.id] || { name: card.name, total: 0 };
+      cardMap[card.id] = cardMap[card.id] || { name: card.name, owner: card.owner, total: 0 };
       cardMap[card.id].total += Number(t.amount) || 0;
     });
     const cardRows = Object.values(cardMap).sort((a, b) => b.total - a.total);
@@ -7995,9 +7995,9 @@ const Insights = {
 
         ${cardRows.length > 0 ? `
           <div class="insights-section-title" style="margin-top:var(--space-4);">By card</div>
-          ${cardRows.map(({ name, total }) => `
+          ${cardRows.map(({ name, owner, total }) => `
             <div class="report-card-row">
-              <div class="report-card-name">💳 ${escapeHtml(name)}</div>
+              <div class="report-card-name">💳 ${escapeHtml(name)} ${Transactions.ownerAvatar(owner, 14)}</div>
               <div class="report-card-amt">${App.formatCurrency(total)}</div>
             </div>`).join('')}
         ` : ''}
