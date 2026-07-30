@@ -703,8 +703,9 @@ h1, h2, h3 {
   background: rgba(239, 68, 68, 0.15);
   color: var(--danger);
 }
-.type-badge.refund   { background: rgba(6,182,212,0.15); color: #06b6d4; }
-.type-badge.returned { background: rgba(107,114,128,0.15); color: var(--text-tertiary); }
+.type-badge.refund     { background: rgba(6,182,212,0.15); color: #06b6d4; }
+.type-badge.returned   { background: rgba(107,114,128,0.15); color: var(--text-tertiary); }
+.type-badge.adjustment { background: rgba(245,158,11,0.15); color: #f59e0b; }
 
 /* Show all sources button (U3 escape) */
 .show-all-btn {
@@ -3326,7 +3327,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v182.01</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v183</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3535,7 +3536,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 182.01 · Jul 24, 2026</div>
+          <div class="app-version">Version 183 · Jul 24, 2026</div>
         </div>
       </div>
     </section>
@@ -6111,12 +6112,15 @@ const Transactions = {
       ? t.tags.map(tg => `<span class="tx-tag" data-filter-tag="${escapeHtml(tg)}" style="cursor:pointer;">#${escapeHtml(tg)}</span>`).join('')
       : '';
     const isRefund = !!t.is_refund;
+    const isAdjustment = !!t.is_adjustment;
     const hasRefund = !isRefund && State.transactions.some(r => r.original_tx_id === t.id);
-    const refundBadge = isRefund
-      ? '<span class="type-badge refund">↩ Refund</span>'
-      : hasRefund
-        ? '<span class="type-badge returned">↩ Refunded</span>'
-        : '';
+    const refundBadge = isAdjustment
+      ? '<span class="type-badge adjustment">⚖ Adjustment</span>'
+      : isRefund
+        ? '<span class="type-badge refund">↩ Refund</span>'
+        : hasRefund
+          ? '<span class="type-badge returned">↩ Refunded</span>'
+          : '';
     const secondLine = catBadge || tagsBadges || refundBadge
       ? `<div class="tx-meta tx-meta-sub">
           ${refundBadge}
@@ -6406,7 +6410,7 @@ function openTransactionForm(transaction = null) {
 
     <div class="flex gap-3" style="margin-top: var(--space-5); align-items:stretch;">
       ${isEdit ? `<button class="btn btn-danger" id="tx-delete" style="width:auto;padding:0 var(--space-4);flex-shrink:0;" title="Delete"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>` : ''}
-      ${isEdit && !t.is_refund ? `<button class="btn btn-secondary" id="tx-return" style="width:auto;padding:0 var(--space-4);flex-shrink:0;">↩ Refund</button>` : ''}
+      ${isEdit && !t.is_refund && !t.is_adjustment ? `<button class="btn btn-secondary" id="tx-return" style="width:auto;padding:0 var(--space-4);flex-shrink:0;">↩ Refund</button>` : ''}
       ${isEdit ? `<button class="btn btn-secondary" id="tx-duplicate" style="width:auto;padding:0 var(--space-4);flex-shrink:0;">⧉ Dup</button>` : ''}
       <button class="btn btn-primary" id="tx-save" style="flex:1;width:auto;">${isEdit ? 'Save' : 'Add'}</button>
     </div>
@@ -7745,6 +7749,92 @@ function openPayStatementForm(cardId, invoiceMonth) {
 }
 
 /**
+ * Adjustment — a balance correction on a card statement that isn't tied
+ * to any specific purchase (unlike Refund, which always links back to an
+ * original transaction and marks it "Refunded"). Use this when the real
+ * statement total doesn't match what's in the app and the cause can't be
+ * pinned to one entry.
+ */
+function openAdjustmentForm(cardId, invoiceMonth) {
+  const card = State.cards.find(c => c.id === cardId);
+  if (!card) return toast('Card not found', 'error');
+
+  const today = localToday();
+
+  Modal.open(`Adjustment · ${card.name}`, `
+    <div class="type-toggle" id="adj-type" style="margin-bottom: var(--space-4);">
+      <button type="button" data-adj-type="decrease" class="active income">↓ Decrease invoice</button>
+      <button type="button" data-adj-type="increase" class="expense">↑ Increase invoice</button>
+    </div>
+
+    <input class="amount-input" id="adj-amount" type="text" inputmode="decimal" placeholder="$0.00" autocomplete="off">
+
+    <div class="form-field">
+      <label class="form-label">Description</label>
+      <input class="form-input" id="adj-desc" value="Adjustment" placeholder="e.g. Statement correction">
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Date</label>
+      <input class="form-input" id="adj-date" type="date" value="${today}">
+    </div>
+
+    <div style="margin-top: var(--space-5);">
+      <button class="btn btn-primary" id="adj-save">Create adjustment</button>
+    </div>
+  `);
+
+  let adjDirection = 'decrease'; // 'decrease' lowers the invoice total, 'increase' raises it
+
+  document.getElementById('adj-type').querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('adj-type').querySelectorAll('button').forEach(b => b.classList.remove('active', 'income', 'expense'));
+      btn.classList.add('active', btn.dataset.adjType === 'decrease' ? 'income' : 'expense');
+      adjDirection = btn.dataset.adjType;
+    });
+  });
+
+  attachCurrencyMask(document.getElementById('adj-amount'));
+  setTimeout(() => document.getElementById('adj-amount').focus(), 300);
+
+  document.getElementById('adj-save').addEventListener('click', async () => {
+    const btn = document.getElementById('adj-save');
+    const amountStr = document.getElementById('adj-amount').value.replace(/[^0-9.,]/g, '').replace(',', '.');
+    const amount = parseFloat(amountStr);
+    const description = document.getElementById('adj-desc').value.trim() || 'Adjustment';
+    const date = document.getElementById('adj-date').value;
+
+    if (!amount || amount <= 0) return toast('Please enter a valid amount', 'error');
+    if (!date) return toast('Please select a date', 'error');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading"></span>';
+
+    try {
+      await Data.createTransaction({
+        type: adjDirection === 'decrease' ? 'income' : 'expense',
+        amount, date, description,
+        account_id: null, card_id: cardId,
+        category_id: null, owner: card.owner,
+        is_adjustment: true,
+        invoice_month: invoiceMonth,
+        installments_total: 1, installment_number: 1,
+        created_by: Auth.getSession()?.userId,
+      });
+      toast('Adjustment created ✓');
+      Modal.close();
+      Transactions.render();
+      Dashboard.render();
+      if (document.getElementById('page-cards').classList.contains('active')) Cards.render();
+    } catch (err) {
+      toast('Error: ' + err.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Create adjustment';
+    }
+  });
+}
+
+/**
  * Confirm a recurrence — creates a real transaction and marks the
  * subscription as confirmed for this month.
  */
@@ -7926,7 +8016,7 @@ const Insights = {
 
   renderMonthlyReport() {
     const ym = this.reportMonth;
-    const txs = this.txsInMonth(ym).filter(t => !t.is_transfer && !t.is_payment && !t.is_refund);
+    const txs = this.txsInMonth(ym).filter(t => !t.is_transfer && !t.is_payment && !t.is_refund && !t.is_adjustment);
 
     const spending = txs.filter(t => t.type === 'expense');
     const pvTotal   = spending.filter(t => t.owner === 'pv').reduce((s, t) => s + (Number(t.amount) || 0), 0);
@@ -8009,6 +8099,7 @@ const Insights = {
   isSpending(t) {
     if (t.is_transfer) return false;     // internal transfers don't count
     if (t.is_payment) return false;      // card payments — already counted at purchase
+    if (t.is_adjustment) return false;   // balance correction, not real spending
     if (t.type === 'income') return false;
     return true;                          // expense or external transfer
   },
@@ -8877,11 +8968,16 @@ const Cards = {
             return '';
           })()}
         </div>
-        ${total > 0 && Invoice.getInvoiceStatus(card.id, this.selectedInvoiceMonth) !== 'paid' ? `
-          <button class="btn btn-primary" id="pay-statement-btn" style="margin-top: var(--space-3);">
-            Pay statement
+        <div class="flex gap-3" style="margin-top: var(--space-3);">
+          ${total > 0 && Invoice.getInvoiceStatus(card.id, this.selectedInvoiceMonth) !== 'paid' ? `
+            <button class="btn btn-primary" id="pay-statement-btn" style="flex:1;">
+              Pay statement
+            </button>
+          ` : ''}
+          <button class="btn btn-secondary" id="adjustment-btn" style="flex:1;">
+            Adjustment
           </button>
-        ` : ''}
+        </div>
       </div>
 
       ${txs.length === 0 ? `
@@ -8903,8 +8999,10 @@ const Cards = {
     const installmentLabel = t.installments_total > 1
       ? `<span class="card-badge installments">${t.installment_number}/${t.installments_total}</span>`
       : '';
-    const isRefund = t.type === 'income';
-    const refundLabel = isRefund ? `<span class="card-badge" style="background:rgba(48,209,88,0.15);color:var(--success);">Refund</span>` : '';
+    const isIncome = t.type === 'income';
+    const badgeLabel = t.is_adjustment ? 'Adjustment' : (isIncome ? 'Refund' : null);
+    const badgeColor = t.is_adjustment ? '#f59e0b' : 'var(--success)';
+    const badge = badgeLabel ? `<span class="card-badge" style="background:${badgeColor}22;color:${badgeColor};">${badgeLabel}</span>` : '';
 
     return `
       <div class="tx-row" data-edit-tx="${t.id}">
@@ -8914,12 +9012,12 @@ const Cards = {
           <div class="tx-meta">
             <span>${this.formatShortDate(this.parseDate(t.date))}</span>
             ${installmentLabel ? `<span>·</span>${installmentLabel}` : ''}
-            ${refundLabel ? `<span>·</span>${refundLabel}` : ''}
+            ${badge ? `<span>·</span>${badge}` : ''}
             <span>·</span>
             <span class="owner-tag ${t.owner}">${this.ownerLabel(t.owner)}</span>
           </div>
         </div>
-        <div class="tx-amount ${isRefund ? 'income' : 'expense'}">${isRefund ? '+' : '-'}${App.formatCurrency(t.amount)}</div>
+        <div class="tx-amount ${isIncome ? 'income' : 'expense'}">${isIncome ? '+' : '-'}${App.formatCurrency(t.amount)}</div>
       </div>
     `;
   },
@@ -8954,6 +9052,13 @@ const Cards = {
     if (payBtn) {
       payBtn.addEventListener('click', () => {
         openPayStatementForm(this.selectedCardId, this.selectedInvoiceMonth);
+      });
+    }
+
+    const adjBtn = document.getElementById('adjustment-btn');
+    if (adjBtn) {
+      adjBtn.addEventListener('click', () => {
+        openAdjustmentForm(this.selectedCardId, this.selectedInvoiceMonth);
       });
     }
   },
