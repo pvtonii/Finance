@@ -3341,7 +3341,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v185.03</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v185.04</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3550,7 +3550,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 185.03 · Aug 1, 2026</div>
+          <div class="app-version">Version 185.04 · Aug 1, 2026</div>
         </div>
       </div>
     </section>
@@ -8439,13 +8439,22 @@ const Insights = {
       months.push({ ym, label });
     }
 
-    // Same definitions already used by incomeInMonth() / isSpending() elsewhere in Insights
+    // Income: same definition already used by incomeInMonth() elsewhere in Insights.
+    // Out: money that actually LEFT an account — real debit spending + card statement
+    // payments (both are account_id-based) — NOT card purchases, which only leave the
+    // account later, when the statement gets paid. Refunds returned to an account net
+    // against this instead of counting as income.
     const monthData = months.map(m => {
       const txs = this.txsInMonth(m.ym);
       const income = txs.filter(t => t.type === 'income' && !t.is_transfer)
         .reduce((s, t) => s + (Number(t.amount) || 0), 0);
-      const expense = txs.filter(t => this.isSpending(t))
-        .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      const accountTxs = txs.filter(t => t.account_id && !t.card_id && !t.is_transfer);
+      const expense = accountTxs.reduce((s, t) => {
+        const v = Number(t.amount) || 0;
+        if (t.is_refund) return s - v;
+        if (t.type === 'expense') return s + v;
+        return s;
+      }, 0);
       return { ...m, income, expense, net: income - expense };
     });
 
@@ -8469,7 +8478,7 @@ const Insights = {
         <div class="stack-col">
           <div class="paired-bar-wrap">
             <div class="paired-bar" style="height:${incomeH}%; background:var(--success);" title="Income: ${App.formatCurrency(m.income)}"></div>
-            <div class="paired-bar" style="height:${expenseH}%; background:var(--danger);" title="Expense: ${App.formatCurrency(m.expense)}"></div>
+            <div class="paired-bar" style="height:${expenseH}%; background:var(--danger);" title="Left account: ${App.formatCurrency(m.expense)}"></div>
           </div>
           <div class="stack-label">${m.label}</div>
           <div class="stack-total" style="color:${netColor};">${netSign}${App.formatCurrency(Math.abs(m.net))}</div>
@@ -8483,7 +8492,7 @@ const Insights = {
         <div class="stack-chart">${barsHtml}</div>
         <div class="stack-legend">
           <div class="stack-legend-item"><span class="stack-legend-dot" style="background:var(--success);"></span>Income</div>
-          <div class="stack-legend-item"><span class="stack-legend-dot" style="background:var(--danger);"></span>Expense</div>
+          <div class="stack-legend-item"><span class="stack-legend-dot" style="background:var(--danger);"></span>Left account</div>
         </div>
       </div>
     `;
