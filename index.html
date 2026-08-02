@@ -3341,7 +3341,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v185.04</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v185.05</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3401,7 +3401,7 @@ html { scroll-behavior: smooth; }
             <div class="text-mono text-success" id="dash-income" style="font-size:1.125rem;font-weight:500;">+$0.00</div>
           </div>
           <div style="flex:1;">
-            <div class="card-title" style="margin-bottom:4px;">Expenses</div>
+            <div class="card-title" id="dash-expense-label" data-toggle-expense-view style="margin-bottom:4px;cursor:pointer;">Expenses <span style="opacity:0.5;">↻</span></div>
             <div class="text-mono text-danger" id="dash-expense" style="font-size:1.125rem;font-weight:500;">-$0.00</div>
           </div>
         </div>
@@ -3550,7 +3550,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 185.04 · Aug 1, 2026</div>
+          <div class="app-version">Version 185.05 · Aug 1, 2026</div>
         </div>
       </div>
     </section>
@@ -9193,6 +9193,7 @@ const Cards = {
 
 const Dashboard = {
   upcomingView: 'current', // 'current' | 'past'
+  expenseView: 'spending', // 'spending' | 'account' — toggled on the "This month" card
 
   /** Returns a CSS class for an upcoming-row's outline based on its date vs today */
   dateOutlineClass(dateStr) {
@@ -9308,7 +9309,13 @@ const Dashboard = {
 
     // Movimentação do mês
     animCounter(document.getElementById('dash-income'), monthStats.income, '+');
-    animCounter(document.getElementById('dash-expense'), -monthStats.expense);
+    const expenseVal = this.expenseView === 'account' ? monthStats.leftAccount : monthStats.expense;
+    animCounter(document.getElementById('dash-expense'), -expenseVal);
+    const expenseLabel = document.getElementById('dash-expense-label');
+    if (expenseLabel) {
+      expenseLabel.innerHTML = (this.expenseView === 'account' ? 'Left account' : 'Expenses')
+        + ' <span style="opacity:0.5;">↻</span>';
+    }
 
     // Cards due this month OR in the first 7 days of next month
     const nextMonthRef = new Date(nowYear, nowMonth + 1, 1);
@@ -10073,7 +10080,21 @@ const Dashboard = {
       else if (t.type === 'income') income += v;
       else expense += v;
     });
-    return { income, expense };
+
+    // Left account: money that actually left an account — real debit spending +
+    // card statement payments (both account_id-set/card_id-null) — NOT card
+    // purchases, which only leave the account later when the statement is paid.
+    // Same definition as Insights.renderIncomeComparison().
+    let leftAccount = 0;
+    State.transactions
+      .filter(t => (t.date || '').startsWith(ym) && t.account_id && !t.card_id && !t.is_transfer)
+      .forEach(t => {
+        const v = Number(t.amount) || 0;
+        if (t.is_refund) leftAccount -= v;
+        else if (t.type === 'expense') leftAccount += v;
+      });
+
+    return { income, expense, leftAccount };
   },
 
 };
@@ -10272,6 +10293,12 @@ document.addEventListener('click', (e) => {
   if (tagEl) {
     e.stopPropagation();
     filterTransactionsByTag(tagEl.dataset.filterTag);
+    return;
+  }
+
+  if (e.target.closest('[data-toggle-expense-view]')) {
+    Dashboard.expenseView = Dashboard.expenseView === 'account' ? 'spending' : 'account';
+    Dashboard.render();
     return;
   }
 
