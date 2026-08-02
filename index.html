@@ -3341,7 +3341,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v185.05</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v185.06</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3401,7 +3401,7 @@ html { scroll-behavior: smooth; }
             <div class="text-mono text-success" id="dash-income" style="font-size:1.125rem;font-weight:500;">+$0.00</div>
           </div>
           <div style="flex:1;">
-            <div class="card-title" id="dash-expense-label" data-toggle-expense-view style="margin-bottom:4px;cursor:pointer;">Expenses <span style="opacity:0.5;">↻</span></div>
+            <div class="card-title" style="margin-bottom:4px;">Expenses</div>
             <div class="text-mono text-danger" id="dash-expense" style="font-size:1.125rem;font-weight:500;">-$0.00</div>
           </div>
         </div>
@@ -3550,7 +3550,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 185.05 · Aug 1, 2026</div>
+          <div class="app-version">Version 185.06 · Aug 1, 2026</div>
         </div>
       </div>
     </section>
@@ -5866,6 +5866,7 @@ const Transactions = {
   filterCategory: 'all', // 'all' | category_id
   filterMonth: (() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })(),
   searchTerm: '',        // free text search
+  expenseView: 'spending', // 'spending' | 'account' — toggled on the summary card
 
   /** Returns true if this transaction is a transfer (internal or external) */
   isTransferTx(t) {
@@ -6004,25 +6005,27 @@ const Transactions = {
     const hasSearch = (this.searchTerm || '').trim().length > 0;
     const hasCatFilter = this.filterCategory !== 'all';
     const relevantTxs = txs.filter(t => !this.isTransferTx(t) && !t.is_payment);
+    // "Left account" view: only account_id-based movement (real debit spending +
+    // card statement payments), NOT card purchases — same definition used in
+    // Insights.renderIncomeComparison() and Dashboard.calcMonthStats().
+    const accountTxs = txs.filter(t => t.account_id && !t.card_id && !this.isTransferTx(t));
 
-    let periodLabel;
-    if (this.filterMonth === 'all') {
-      periodLabel = 'All time';
-    } else if (this.filterMonth.length === 4) {
-      periodLabel = this.filterMonth;
-    } else {
-      const [y, m] = this.filterMonth.split('-').map(Number);
-      periodLabel = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    }
+    // Period suffix — omitted for a specific month so the card's width stays
+    // stable as you navigate; only shown for "All time" or a whole year.
+    let periodLabel = '';
+    if (this.filterMonth === 'all') periodLabel = 'All time';
+    else if (this.filterMonth.length === 4) periodLabel = this.filterMonth;
 
-    let label;
+    let suffix;
     if (hasSearch) {
-      label = `${relevantTxs.length} result${relevantTxs.length === 1 ? '' : 's'}`;
+      suffix = `${relevantTxs.length} result${relevantTxs.length === 1 ? '' : 's'}`;
     } else if (hasCatFilter) {
-      label = `${periodLabel} · ${relevantTxs.length} ${relevantTxs.length === 1 ? 'entry' : 'entries'}`;
+      const count = `${relevantTxs.length} ${relevantTxs.length === 1 ? 'entry' : 'entries'}`;
+      suffix = periodLabel ? `${periodLabel} · ${count}` : count;
     } else {
-      label = periodLabel;
+      suffix = periodLabel;
     }
+    const suffixHtml = suffix ? ` · ${suffix}` : '';
 
     let income = 0, expense = 0;
     relevantTxs.forEach(t => {
@@ -6034,14 +6037,25 @@ const Transactions = {
       else expense += v;
     });
 
+    let leftAccount = 0;
+    accountTxs.forEach(t => {
+      const v = Number(t.amount) || 0;
+      if (t.is_refund) leftAccount -= v;
+      else if (t.type === 'expense') leftAccount += v;
+    });
+
+    const isAccountView = this.expenseView === 'account';
+    const expenseVal = isAccountView ? leftAccount : expense;
+    const expenseTitle = isAccountView ? 'Left account' : 'Expenses';
+
     document.getElementById('tx-summary').innerHTML = `
       <div class="tx-summary-item">
-        <div class="tx-summary-label">Income · ${label}</div>
+        <div class="tx-summary-label">Income${suffixHtml}</div>
         <div class="tx-summary-value text-success">+${App.formatCurrency(income)}</div>
       </div>
       <div class="tx-summary-item">
-        <div class="tx-summary-label">Expenses · ${label}</div>
-        <div class="tx-summary-value text-danger">${expense < 0 ? '+' : '-'}${App.formatCurrency(Math.abs(expense))}</div>
+        <div class="tx-summary-label" data-toggle-expense-view style="cursor:pointer;">${expenseTitle}${suffixHtml} <span style="opacity:0.5;">↻</span></div>
+        <div class="tx-summary-value text-danger">${expenseVal < 0 ? '+' : '-'}${App.formatCurrency(Math.abs(expenseVal))}</div>
       </div>
     `;
   },
@@ -9193,7 +9207,6 @@ const Cards = {
 
 const Dashboard = {
   upcomingView: 'current', // 'current' | 'past'
-  expenseView: 'spending', // 'spending' | 'account' — toggled on the "This month" card
 
   /** Returns a CSS class for an upcoming-row's outline based on its date vs today */
   dateOutlineClass(dateStr) {
@@ -9309,13 +9322,7 @@ const Dashboard = {
 
     // Movimentação do mês
     animCounter(document.getElementById('dash-income'), monthStats.income, '+');
-    const expenseVal = this.expenseView === 'account' ? monthStats.leftAccount : monthStats.expense;
-    animCounter(document.getElementById('dash-expense'), -expenseVal);
-    const expenseLabel = document.getElementById('dash-expense-label');
-    if (expenseLabel) {
-      expenseLabel.innerHTML = (this.expenseView === 'account' ? 'Left account' : 'Expenses')
-        + ' <span style="opacity:0.5;">↻</span>';
-    }
+    animCounter(document.getElementById('dash-expense'), -monthStats.expense);
 
     // Cards due this month OR in the first 7 days of next month
     const nextMonthRef = new Date(nowYear, nowMonth + 1, 1);
@@ -10080,21 +10087,7 @@ const Dashboard = {
       else if (t.type === 'income') income += v;
       else expense += v;
     });
-
-    // Left account: money that actually left an account — real debit spending +
-    // card statement payments (both account_id-set/card_id-null) — NOT card
-    // purchases, which only leave the account later when the statement is paid.
-    // Same definition as Insights.renderIncomeComparison().
-    let leftAccount = 0;
-    State.transactions
-      .filter(t => (t.date || '').startsWith(ym) && t.account_id && !t.card_id && !t.is_transfer)
-      .forEach(t => {
-        const v = Number(t.amount) || 0;
-        if (t.is_refund) leftAccount -= v;
-        else if (t.type === 'expense') leftAccount += v;
-      });
-
-    return { income, expense, leftAccount };
+    return { income, expense };
   },
 
 };
@@ -10297,8 +10290,8 @@ document.addEventListener('click', (e) => {
   }
 
   if (e.target.closest('[data-toggle-expense-view]')) {
-    Dashboard.expenseView = Dashboard.expenseView === 'account' ? 'spending' : 'account';
-    Dashboard.render();
+    Transactions.expenseView = Transactions.expenseView === 'account' ? 'spending' : 'account';
+    Transactions.render();
     return;
   }
 
