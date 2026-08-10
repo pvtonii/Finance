@@ -3341,7 +3341,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v186.01</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v186.02</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3550,7 +3550,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 186.01 · Aug 10, 2026</div>
+          <div class="app-version">Version 186.02 · Aug 10, 2026</div>
         </div>
       </div>
     </section>
@@ -8272,9 +8272,24 @@ const Insights = {
   // ============ Section 0: Weekly Budgets (custom per-category spending targets) ============
   renderWeeklyBudgets() {
     const addBtn = `<button class="section-add" data-add-budget style="background:transparent;">+ Add</button>`;
+
+    // Header date range — uses the default week (Saturday-Friday) as a label;
+    // individual rows still show their own week if a budget uses a different start day.
+    const { start: hStart, end: hEnd } = currentWeekRange(6);
+    const hStartD = new Date(hStart + 'T12:00:00');
+    const hEndD = new Date(hEnd + 'T12:00:00');
+    const dayNames = `${hStartD.toLocaleDateString('en-US', { weekday: 'short' })}–${hEndD.toLocaleDateString('en-US', { weekday: 'short' })}`;
+    const dateRange = hStartD.getMonth() === hEndD.getMonth()
+      ? `${hStartD.toLocaleDateString('en-US', { month: 'short' })} ${hStartD.getDate()}–${hEndD.getDate()}`
+      : `${hStartD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${hEndD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+    const weekLabel = `${dayNames} · ${dateRange}`;
+
     const header = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3);">
-        <div class="insights-section-title" style="margin-bottom:0;">Weekly Budgets</div>
+        <div style="display:flex;align-items:baseline;gap:6px;">
+          <div class="insights-section-title" style="margin-bottom:0;">Weekly Budgets</div>
+          <span style="font-size:0.6875rem;color:var(--text-tertiary);">${weekLabel}</span>
+        </div>
         ${addBtn}
       </div>
     `;
