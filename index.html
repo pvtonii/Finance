@@ -3341,7 +3341,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v185.06</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v186</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3550,7 +3550,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 185.06 · Aug 1, 2026</div>
+          <div class="app-version">Version 186 · Aug 1, 2026</div>
         </div>
       </div>
     </section>
@@ -3884,6 +3884,7 @@ const State = {
   cards: [],
   transactions: [],
   subscriptions: [],
+  budgets: [],
 };
 
 // ── Category hierarchy helpers ────────────────────────────────────────────────
@@ -3901,6 +3902,35 @@ function categoryPath(categoryId) {
   const parent = State.categories.find(c => c.id === cat.parent_id) || null;
   return { parent, child: cat };
 }
+
+/** <option>/<optgroup> markup for expense categories (parent + children), for pickers */
+function categoryOptionsHtml(selectedId) {
+  let html = '';
+  parentCategories('expense').forEach(p => {
+    const children = childCategories(p.id);
+    html += `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${p.icon || ''} ${escapeHtml(p.name)}${children.length ? ' — all' : ''}</option>`;
+    if (children.length) {
+      html += `<optgroup label="   ↳ ${escapeHtml(p.name)}">`;
+      children.forEach(ch => {
+        html += `<option value="${ch.id}" ${ch.id === selectedId ? 'selected' : ''}>  ${ch.icon || ''} ${escapeHtml(ch.name)}</option>`;
+      });
+      html += '</optgroup>';
+    }
+  });
+  return html;
+}
+
+/** Current week's [start, end] YYYY-MM-DD, starting on weekStartDay (0=Sun...6=Sat) */
+function currentWeekRange(weekStartDay = 6) {
+  const today = new Date();
+  let diff = today.getDay() - weekStartDay;
+  if (diff < 0) diff += 7;
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - diff);
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { start: fmt(start), end: fmt(end) };
+}
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Tags helpers ──────────────────────────────────────────────────────────────
@@ -4078,6 +4108,7 @@ const Data = {
         cards: State.cards,
         transactions: State.transactions,
         subscriptions: State.subscriptions,
+        budgets: State.budgets,
       }));
     } catch (e) { /* storage full — ignore */ }
   },
@@ -4092,6 +4123,7 @@ const Data = {
       State.cards = c.cards || [];
       State.transactions = c.transactions || [];
       State.subscriptions = c.subscriptions || [];
+      State.budgets = c.budgets || [];
       return true;
     } catch (e) { return false; }
   },
@@ -4100,23 +4132,26 @@ const Data = {
     if (!db) return;
     Status.set('syncing', 'Refreshing…');
     try {
-      const [cats, accs, crds, txs, subs] = await Promise.all([
+      const [cats, accs, crds, txs, subs, budgets] = await Promise.all([
         db.from('categories').select('*').order('name'),
         db.from('accounts').select('*').order('name'),
         db.from('cards').select('*').order('name'),
         db.from('transactions').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
         db.from('subscriptions').select('*').order('billing_day'),
+        db.from('budgets').select('*').order('created_at'),
       ]);
       if (cats.error) throw cats.error;
       if (accs.error) throw accs.error;
       if (crds.error) throw crds.error;
       if (txs.error) throw txs.error;
       if (subs.error) throw subs.error;
+      if (budgets.error) throw budgets.error;
       State.categories = cats.data || [];
       State.accounts = accs.data || [];
       State.cards = crds.data || [];
       State.transactions = txs.data || [];
       State.subscriptions = subs.data || [];
+      State.budgets = budgets.data || [];
       this.saveCache();
       Status.set('connected', `${State.transactions.length} transactions · ${State.cards.length} cards`);
     } catch (e) {
@@ -4225,6 +4260,44 @@ const Data = {
     State.cards = State.cards.filter(c => c.id !== id);
     this._setReady();
     if (card) ActivityLog.record('delete', 'card', card.name);
+  },
+
+  // Weekly budgets
+  async createBudget(data) {
+    if (!db) throw new Error('Supabase not configured');
+    Status.set('syncing', 'Saving…');
+    const { data: row, error } = await db.from('budgets').insert([data]).select().single();
+    if (error) { Status.set('disconnected', 'Save failed'); throw error; }
+    State.budgets.push(row);
+    this._setReady();
+    const cat = State.categories.find(c => c.id === row.category_id);
+    ActivityLog.record('create', 'budget', `${cat?.name || '?'} · ${App.formatCurrency(row.amount)}/week`);
+    return row;
+  },
+  async updateBudget(id, data) {
+    if (!db) throw new Error('Supabase not configured');
+    Status.set('syncing', 'Updating…');
+    const { data: row, error } = await db.from('budgets').update(data).eq('id', id).select().single();
+    if (error) { Status.set('disconnected', 'Update failed'); throw error; }
+    const idx = State.budgets.findIndex(b => b.id === id);
+    if (idx >= 0) State.budgets[idx] = row;
+    this._setReady();
+    const cat = State.categories.find(c => c.id === row.category_id);
+    ActivityLog.record('update', 'budget', `${cat?.name || '?'} · ${App.formatCurrency(row.amount)}/week`);
+    return row;
+  },
+  async deleteBudget(id) {
+    if (!db) throw new Error('Supabase not configured');
+    const budget = State.budgets.find(b => b.id === id);
+    Status.set('syncing', 'Deleting…');
+    const { error } = await db.from('budgets').delete().eq('id', id);
+    if (error) { Status.set('disconnected', 'Delete failed'); throw error; }
+    State.budgets = State.budgets.filter(b => b.id !== id);
+    this._setReady();
+    if (budget) {
+      const cat = State.categories.find(c => c.id === budget.category_id);
+      ActivityLog.record('delete', 'budget', cat?.name || '?');
+    }
   },
 
   // Subscriptions / Recurring
@@ -7892,6 +7965,91 @@ function openAdjustmentForm(cardId, invoiceMonth) {
 }
 
 /**
+ * Weekly budget — a shared spending target per category, tracked over a
+ * custom week window (defaults to Saturday-Friday). Used by the "Weekly
+ * Budgets" card in Insights.
+ */
+function openBudgetForm(budget = null) {
+  const isEdit = !!budget;
+  const b = budget || { category_id: null, amount: '', week_start_day: 6 };
+
+  Modal.open(isEdit ? 'Edit budget' : 'New weekly budget', `
+    <div class="form-field">
+      <label class="form-label">Category</label>
+      <select class="form-input" id="budget-category">
+        <option value="">Select a category…</option>
+        ${categoryOptionsHtml(b.category_id)}
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Weekly amount</label>
+      <input class="amount-input" id="budget-amount" type="text" inputmode="decimal" placeholder="$0.00"
+             value="${b.amount ? formatAmountInput(b.amount) : ''}" autocomplete="off">
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Week starts on</label>
+      <select class="form-input" id="budget-weekstart">
+        ${WEEKDAY_NAMES.map((name, i) => `<option value="${i}" ${i === b.week_start_day ? 'selected' : ''}>${name}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="flex gap-3" style="margin-top: var(--space-5); align-items:stretch;">
+      ${isEdit ? `<button class="btn btn-danger" id="budget-delete" style="width:auto;padding:0 var(--space-4);flex-shrink:0;" title="Delete"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>` : ''}
+      <button class="btn btn-primary" id="budget-save" style="flex:1;">${isEdit ? 'Save' : 'Create budget'}</button>
+    </div>
+  `);
+
+  attachCurrencyMask(document.getElementById('budget-amount'));
+
+  document.getElementById('budget-save').addEventListener('click', async () => {
+    const btn = document.getElementById('budget-save');
+    const category_id = document.getElementById('budget-category').value;
+    const amountStr = document.getElementById('budget-amount').value.replace(/[^0-9.,]/g, '').replace(',', '.');
+    const amount = parseFloat(amountStr);
+    const week_start_day = Number(document.getElementById('budget-weekstart').value);
+
+    if (!category_id) return toast('Please select a category', 'error');
+    if (!amount || amount <= 0) return toast('Please enter a valid amount', 'error');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading"></span>';
+
+    try {
+      if (isEdit) {
+        await Data.updateBudget(b.id, { category_id, amount, week_start_day });
+        toast('Budget updated ✓');
+      } else {
+        await Data.createBudget({ category_id, amount, week_start_day });
+        toast('Budget created ✓');
+      }
+      Modal.close();
+      Insights.render();
+    } catch (err) {
+      toast('Error: ' + err.message, 'error');
+      btn.disabled = false;
+      btn.textContent = isEdit ? 'Save' : 'Create budget';
+    }
+  });
+
+  if (isEdit) {
+    document.getElementById('budget-delete').addEventListener('click', async () => {
+      const ok = await confirmDialog('Delete this budget?', { confirmLabel: 'Delete' });
+      if (!ok) return;
+      try {
+        await Data.deleteBudget(b.id);
+        toast('Budget deleted');
+        Modal.close();
+        Insights.render();
+      } catch (err) {
+        toast('Error: ' + err.message, 'error');
+      }
+    });
+  }
+}
+
+/**
  * Confirm a recurrence — creates a real transaction and marks the
  * subscription as confirmed for this month.
  */
@@ -8052,6 +8210,7 @@ const Insights = {
     const container = document.getElementById('insights-page-content');
     if (!container) return;
     container.innerHTML = `
+      ${this.renderWeeklyBudgets()}
       ${this.renderMonthlyReport()}
       ${this.renderIncomeUsage()}
       ${this.renderTopCategories()}
@@ -8061,6 +8220,64 @@ const Insights = {
       ${this.renderWeekdayHeatmap()}
     `;
     this.updateReportNav();
+  },
+
+  // ============ Section 0: Weekly Budgets (custom per-category spending targets) ============
+  renderWeeklyBudgets() {
+    const addBtn = `<button class="section-add" data-add-budget style="background:transparent;">+ Add</button>`;
+    const header = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3);">
+        <div class="insights-section-title" style="margin-bottom:0;">Weekly Budgets</div>
+        ${addBtn}
+      </div>
+    `;
+
+    if (!State.budgets.length) {
+      return `
+        <div class="insights-card">
+          ${header}
+          <div class="empty-state-text">No weekly budgets yet. Add one to track spending by category.</div>
+        </div>
+      `;
+    }
+
+    const rows = State.budgets.map(b => {
+      const cat = State.categories.find(c => c.id === b.category_id);
+      const { start, end } = currentWeekRange(b.week_start_day ?? 6);
+      const childIds = cat ? new Set(childCategories(cat.id).map(c => c.id)) : new Set();
+      const spent = State.transactions
+        .filter(t => this.isSpending(t) && t.date >= start && t.date <= end &&
+          (t.category_id === b.category_id || childIds.has(t.category_id)))
+        .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+      const amount = Number(b.amount) || 0;
+      const remaining = amount - spent;
+      const pct = amount > 0 ? (spent / amount * 100) : 0;
+      const isOver = remaining < 0;
+      const color = isOver ? 'var(--danger)' : pct >= 80 ? 'var(--warning)' : 'var(--success)';
+      const statusText = isOver
+        ? `${App.formatCurrency(Math.abs(remaining))} over`
+        : `${App.formatCurrency(remaining)} left`;
+      const endLabel = new Date(end + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+      return `
+        <div style="margin-bottom:var(--space-3);cursor:pointer;" data-edit-budget="${b.id}">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+            <span style="font-size:0.8125rem;font-weight:500;">${cat?.icon || '•'} ${escapeHtml(cat?.name || 'Unknown')}</span>
+            <span style="font-size:0.75rem;font-weight:600;color:${color};">${statusText}</span>
+          </div>
+          <div class="report-bar-track"><div class="report-bar-fill" style="width:${Math.min(100, pct)}%;background:${color};"></div></div>
+          <div style="font-size:0.6875rem;color:var(--text-tertiary);margin-top:3px;">${App.formatCurrency(spent)} of ${App.formatCurrency(amount)} · through ${endLabel}</div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="insights-card">
+        ${header}
+        ${rows}
+      </div>
+    `;
   },
 
   updateReportNav() {
@@ -10292,6 +10509,17 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-toggle-expense-view]')) {
     Transactions.expenseView = Transactions.expenseView === 'account' ? 'spending' : 'account';
     Transactions.render();
+    return;
+  }
+
+  if (e.target.closest('[data-add-budget]')) {
+    openBudgetForm();
+    return;
+  }
+  const editBudgetEl = e.target.closest('[data-edit-budget]');
+  if (editBudgetEl) {
+    const b = State.budgets.find(x => x.id === editBudgetEl.dataset.editBudget);
+    if (b) openBudgetForm(b);
     return;
   }
 
