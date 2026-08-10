@@ -3341,7 +3341,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v186</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v186.01</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3550,7 +3550,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 186 · Aug 1, 2026</div>
+          <div class="app-version">Version 186.01 · Aug 10, 2026</div>
         </div>
       </div>
     </section>
@@ -3784,6 +3784,53 @@ function isIntervalBased(s) {
 }
 function getOccurrences(s, year, month) {
   return getIntervalOccurrences(s.billing_start_date, year, month, s.billing_frequency === 'weekly' ? 7 : 14);
+}
+
+/**
+ * Sum of active expense subscriptions matching categoryId (or a child in
+ * childIds) whose billing date falls within [startStr, endStr] (YYYY-MM-DD)
+ * and hasn't been confirmed yet — used to project "money already committed
+ * this week" onto weekly budgets, without double-counting what's already a
+ * real transaction.
+ */
+function pendingRecurringInRange(categoryId, childIds, startStr, endStr) {
+  let total = 0;
+  const [sy, sm] = startStr.split('-').map(Number);
+  const [ey, em] = endStr.split('-').map(Number);
+  const monthsToCheck = new Set([`${sy}-${sm - 1}`, `${ey}-${em - 1}`]); // 0-indexed month, for Date()
+
+  State.subscriptions.forEach(s => {
+    if (!s.is_active || s.type !== 'expense') return;
+    if (s.category_id !== categoryId && !childIds.has(s.category_id)) return;
+    const amount = Number(s.amount) || 0;
+    if (!amount) return;
+
+    if (isIntervalBased(s) && s.billing_start_date) {
+      const confirmedDates = JSON.parse(s.confirmed_dates || '[]');
+      monthsToCheck.forEach(key => {
+        const [yy, mm] = key.split('-').map(Number);
+        getOccurrences(s, yy, mm).forEach(dateStr => {
+          if (dateStr >= startStr && dateStr <= endStr && !confirmedDates.includes(dateStr)) {
+            total += amount;
+          }
+        });
+      });
+      return;
+    }
+
+    // Monthly: project billing_day onto each touched month, skip if already confirmed that month
+    monthsToCheck.forEach(key => {
+      const [yy, mm] = key.split('-').map(Number);
+      const ym = `${yy}-${String(mm + 1).padStart(2, '0')}`;
+      if (s.last_confirmed_month && s.last_confirmed_month.startsWith(ym)) return;
+      const lastDay = new Date(yy, mm + 1, 0).getDate();
+      const day = Math.min(Number(s.billing_day) || 1, lastDay);
+      const dateStr = `${ym}-${String(day).padStart(2, '0')}`;
+      if (dateStr >= startStr && dateStr <= endStr) total += amount;
+    });
+  });
+
+  return total;
 }
 
 function initSupabaseClient() {
@@ -8245,10 +8292,12 @@ const Insights = {
       const cat = State.categories.find(c => c.id === b.category_id);
       const { start, end } = currentWeekRange(b.week_start_day ?? 6);
       const childIds = cat ? new Set(childCategories(cat.id).map(c => c.id)) : new Set();
-      const spent = State.transactions
+      const actualSpent = State.transactions
         .filter(t => this.isSpending(t) && t.date >= start && t.date <= end &&
           (t.category_id === b.category_id || childIds.has(t.category_id)))
         .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      const pendingAmount = pendingRecurringInRange(b.category_id, childIds, start, end);
+      const spent = actualSpent + pendingAmount;
 
       const amount = Number(b.amount) || 0;
       const remaining = amount - spent;
@@ -8259,6 +8308,9 @@ const Insights = {
         ? `${App.formatCurrency(Math.abs(remaining))} over`
         : `${App.formatCurrency(remaining)} left`;
       const endLabel = new Date(end + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const spentLabel = pendingAmount > 0
+        ? `${App.formatCurrency(actualSpent)} spent + ${App.formatCurrency(pendingAmount)} upcoming`
+        : `${App.formatCurrency(actualSpent)} spent`;
 
       return `
         <div style="margin-bottom:var(--space-3);cursor:pointer;" data-edit-budget="${b.id}">
@@ -8267,7 +8319,7 @@ const Insights = {
             <span style="font-size:0.75rem;font-weight:600;color:${color};">${statusText}</span>
           </div>
           <div class="report-bar-track"><div class="report-bar-fill" style="width:${Math.min(100, pct)}%;background:${color};"></div></div>
-          <div style="font-size:0.6875rem;color:var(--text-tertiary);margin-top:3px;">${App.formatCurrency(spent)} of ${App.formatCurrency(amount)} · through ${endLabel}</div>
+          <div style="font-size:0.6875rem;color:var(--text-tertiary);margin-top:3px;">${spentLabel} of ${App.formatCurrency(amount)} · through ${endLabel}</div>
         </div>
       `;
     }).join('');
