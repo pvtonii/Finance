@@ -3341,7 +3341,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v186.04</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v187</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3550,7 +3550,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 186.04 · Aug 10, 2026</div>
+          <div class="app-version">Version 187 · Aug 10, 2026</div>
         </div>
       </div>
     </section>
@@ -5340,6 +5340,10 @@ const Settings = {
 
   accountRow(a) {
     const typeIcons = { checking: '🏦', savings: '💰', cash: '💵', investment: '📈' };
+    const balance = Number(a.initial_balance) || 0;
+    const currentBalance = State.transactions
+      .filter(t => t.account_id === a.id && !t.card_id)
+      .reduce((s, t) => s + (t.type === 'income' ? (Number(t.amount) || 0) : -(Number(t.amount) || 0)), balance);
     return `
       <div class="item-row" data-edit-account="${a.id}">
         <div class="item-icon">${typeIcons[a.type] || '🏦'}</div>
@@ -5351,7 +5355,8 @@ const Settings = {
             <span>${this.accountTypeLabel(a.type)}</span>
           </div>
         </div>
-        <div class="item-amount">${App.formatCurrency(a.initial_balance)}</div>
+        <div class="item-amount">${App.formatCurrency(currentBalance)}</div>
+        <button type="button" class="section-add" data-view-statement="${a.id}" title="Statement" style="background:transparent;margin-left:var(--space-2);flex-shrink:0;">📄</button>
       </div>
     `;
   },
@@ -5533,6 +5538,60 @@ function openCategoryForm(category = null, defaultType = 'expense', defaultParen
       }
     });
   }
+}
+
+/**
+ * Account statement — chronological ledger of every transaction that
+ * touched this account, each showing the running balance after it (like a
+ * bank statement), starting from the account's initial_balance.
+ */
+function openAccountStatement(accountId) {
+  const acc = State.accounts.find(a => a.id === accountId);
+  if (!acc) return;
+
+  const txs = State.transactions
+    .filter(t => t.account_id === accountId && !t.card_id)
+    .slice()
+    .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.created_at || '').localeCompare(b.created_at || ''));
+
+  let running = Number(acc.initial_balance) || 0;
+  const withBalance = txs.map(t => {
+    const v = Number(t.amount) || 0;
+    running += (t.type === 'income' ? v : -v);
+    return { ...t, _balanceAfter: running };
+  });
+  const currentBalance = running;
+
+  const rowsHtml = withBalance.slice().reverse().map(t => {
+    const isIncome = t.type === 'income';
+    const sign = isIncome ? '+' : '−';
+    const amtClass = isIncome ? 'text-success' : 'text-danger';
+    const cat = State.categories.find(c => c.id === t.category_id);
+    const title = t.description || cat?.name || (t.is_transfer ? 'Transfer' : 'Uncategorized');
+    const dateLabel = new Date(t.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:var(--space-3) 0;border-bottom:1px solid var(--border-subtle);">
+        <div style="min-width:0;flex:1;">
+          <div style="font-size:0.875rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(title)}</div>
+          <div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:2px;">${dateLabel}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:var(--space-3);">
+          <div class="text-mono ${amtClass}" style="font-size:0.875rem;font-weight:500;">${sign}${App.formatCurrency(Math.abs(Number(t.amount) || 0))}</div>
+          <div class="text-mono" style="font-size:0.6875rem;color:var(--text-tertiary);margin-top:2px;">${App.formatCurrency(t._balanceAfter)}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  Modal.open(`${acc.name} · Statement`, `
+    <div style="text-align:center;padding-bottom:var(--space-4);border-bottom:1px solid var(--border-subtle);margin-bottom:var(--space-2);">
+      <div style="font-size:0.6875rem;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.06em;">Current balance</div>
+      <div class="text-mono" style="font-size:1.75rem;font-weight:600;margin-top:4px;">${App.formatCurrency(currentBalance)}</div>
+    </div>
+    ${withBalance.length === 0
+      ? `<div class="empty-state-text" style="text-align:center;padding:var(--space-4) 0;">No transactions yet.</div>`
+      : rowsHtml}
+  `);
 }
 
 function openAccountForm(account = null) {
@@ -10569,6 +10628,14 @@ document.addEventListener('click', (e) => {
   if (tagEl) {
     e.stopPropagation();
     filterTransactionsByTag(tagEl.dataset.filterTag);
+    return;
+  }
+
+  // Account statement button — wins over the row's own data-edit-account handler
+  const stmtEl = e.target.closest('[data-view-statement]');
+  if (stmtEl) {
+    e.stopPropagation();
+    openAccountStatement(stmtEl.dataset.viewStatement);
     return;
   }
 
