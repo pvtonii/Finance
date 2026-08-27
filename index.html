@@ -3346,7 +3346,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.02</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.03</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3565,7 +3565,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 189.02 · Aug 20, 2026</div>
+          <div class="app-version">Version 189.03 · Aug 20, 2026</div>
         </div>
       </div>
     </section>
@@ -4010,6 +4010,8 @@ function dayOptionsHtml(selected) {
   for (let d = 1; d <= 31; d++) html += `<option value="${d}" ${d === sel ? 'selected' : ''}>${d}</option>`;
   return html;
 }
+// Distinct accent color per non-monthly recurring frequency, used on badges throughout
+const FREQ_COLORS = { weekly: '#60a5fa', biweekly: '#a855f7', yearly: '#f59e0b' };
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Tags helpers ──────────────────────────────────────────────────────────────
@@ -5343,11 +5345,11 @@ const Settings = {
             <span class="owner-tag ${s.owner}">${this.ownerLabel(s.owner)}</span>
             <span>·</span>
             ${s.billing_frequency === 'weekly'
-              ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;">↻ 1 week</span>`
+              ? `<span class="type-badge" style="background:${FREQ_COLORS.weekly}26;color:${FREQ_COLORS.weekly};">↻ 1 week</span>`
               : s.billing_frequency === 'quinzenal'
-                ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;">↻ 2 weeks</span>`
+                ? `<span class="type-badge" style="background:${FREQ_COLORS.biweekly}26;color:${FREQ_COLORS.biweekly};">↻ 2 weeks</span>`
                 : s.billing_frequency === 'yearly'
-                  ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;">↻ ${(MONTH_NAMES[Number(s.billing_month) - 1] || '').slice(0, 3)} ${s.billing_day}</span>`
+                  ? `<span class="type-badge" style="background:${FREQ_COLORS.yearly}26;color:${FREQ_COLORS.yearly};">↻ ${(MONTH_NAMES[Number(s.billing_month) - 1] || '').slice(0, 3)} ${s.billing_day}</span>`
                   : `<span>Day ${s.billing_day}</span>`}
             <span>·</span>
             <span>${escapeHtml(sourceLabel)}</span>
@@ -9928,7 +9930,7 @@ const Dashboard = {
         <span class="text-mono ${cls}" style="font-size:0.875rem;font-weight:600;">${amount}</span>
       </div>`;
 
-    const freqBadge = freq => freq ? `<span style="font-size:0.6rem;color:#a855f7;font-weight:600;margin-left:5px;">↻ ${freq}</span>` : '';
+    const freqBadge = freq => freq ? `<span style="font-size:0.6rem;color:${FREQ_COLORS[freq]};font-weight:600;margin-left:5px;">↻ ${freq}</span>` : '';
     const itemRow = (name, amt, sign, cls, date = null, freq = null) =>
       `<div style="display:flex;justify-content:space-between;padding:3px 0 3px 12px;">
         <span style="color:var(--text-tertiary);font-size:0.8125rem;">${escapeHtml(name)}${date ? `<span style="font-size:0.6rem;opacity:0.5;margin-left:5px;">${date}</span>` : ''}${freqBadge(freq)}</span>
@@ -10392,10 +10394,11 @@ const Dashboard = {
       : s._occurrence_date
         ? new Date(s._occurrence_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         : `Day ${s.billing_day}`;
-    const freqLabel = s._occurrence_date
-      ? (s.billing_frequency === 'weekly' ? '↻ 1 week' : '↻ 2 weeks')
-      : isYearly(s) ? '↻ yearly' : null;
-    const biweeklyBadge = freqLabel ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;margin-left:4px;">${freqLabel}</span>` : '';
+    const freqKey = s._occurrence_date
+      ? (s.billing_frequency === 'weekly' ? 'weekly' : 'biweekly')
+      : isYearly(s) ? 'yearly' : null;
+    const freqLabel = freqKey === 'weekly' ? '↻ 1 week' : freqKey === 'biweekly' ? '↻ 2 weeks' : freqKey === 'yearly' ? '↻ yearly' : null;
+    const biweeklyBadge = freqKey ? `<span class="type-badge" style="background:${FREQ_COLORS[freqKey]}26;color:${FREQ_COLORS[freqKey]};margin-left:4px;">${freqLabel}</span>` : '';
     const confirmDate = s._early_date || s._occurrence_date || '';
     const now = new Date();
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
