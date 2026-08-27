@@ -3346,7 +3346,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v188.03</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3504,6 +3504,16 @@ html { scroll-behavior: smooth; }
         </div>
         <div class="section-hint">Recurring deposits (salary, freelance retainers…)</div>
         <div class="item-list" id="list-recurring-income"></div>
+
+        <div class="section-header">
+          <span class="section-title">Annual</span>
+          <button class="section-add" data-add="subscription" data-kind="recurring-expense" data-freq="yearly">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14m-7-7h14" stroke="currentColor" stroke-linecap="round"/></svg>
+            New
+          </button>
+        </div>
+        <div class="section-hint">Once-a-year bills and income (insurance, property tax…)</div>
+        <div class="item-list" id="list-recurring-annual"></div>
       </div>
 
       <div class="tab-content hidden" id="tab-history">
@@ -3555,7 +3565,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 188.03 · Aug 20, 2026</div>
+          <div class="app-version">Version 189 · Aug 20, 2026</div>
         </div>
       </div>
     </section>
@@ -3790,6 +3800,14 @@ function isIntervalBased(s) {
 function getOccurrences(s, year, month) {
   return getIntervalOccurrences(s.billing_start_date, year, month, s.billing_frequency === 'weekly' ? 7 : 14);
 }
+function isYearly(s) {
+  return s.billing_frequency === 'yearly';
+}
+// Monthly/yearly subs share the same billing_day-of-month logic; a yearly sub
+// only fires in its one configured billing_month (1-indexed).
+function billingMonthMatches(s, month1) {
+  return !isYearly(s) || Number(s.billing_month) === month1;
+}
 
 /**
  * Sum of active expense subscriptions matching categoryId (or a child in
@@ -3823,9 +3841,10 @@ function pendingRecurringInRange(categoryId, childIds, startStr, endStr) {
       return;
     }
 
-    // Monthly: project billing_day onto each touched month, skip if already confirmed that month
+    // Monthly/yearly: project billing_day onto each touched month, skip if already confirmed that month
     monthsToCheck.forEach(key => {
       const [yy, mm] = key.split('-').map(Number);
+      if (!billingMonthMatches(s, mm + 1)) return;
       const ym = `${yy}-${String(mm + 1).padStart(2, '0')}`;
       if (s.last_confirmed_month && s.last_confirmed_month.startsWith(ym)) return;
       const lastDay = new Date(yy, mm + 1, 0).getDate();
@@ -3983,6 +4002,7 @@ function currentWeekRange(weekStartDay = 6) {
   return { start: fmt(start), end: fmt(end) };
 }
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Tags helpers ──────────────────────────────────────────────────────────────
@@ -5272,13 +5292,16 @@ const Settings = {
   },
 
   renderRecurring() {
-    // 3 sections:
-    // - Subscriptions: expense + has card_id
-    // - Recurring expenses: expense + has account_id (no card)
-    // - Recurring income: income
-    const subscriptions = State.subscriptions.filter(s => s.type === 'expense' && !!s.card_id);
-    const recurringExpenses = State.subscriptions.filter(s => s.type === 'expense' && !s.card_id);
-    const incomes = State.subscriptions.filter(s => s.type === 'income');
+    // 4 sections:
+    // - Subscriptions: expense + has card_id (monthly/weekly/quinzenal only)
+    // - Recurring expenses: expense + has account_id (no card, monthly/weekly/quinzenal only)
+    // - Recurring income: income (monthly/weekly/quinzenal only)
+    // - Annual: any of the above with billing_frequency 'yearly', grouped together
+    const isYearlySub = s => s.billing_frequency === 'yearly';
+    const subscriptions = State.subscriptions.filter(s => s.type === 'expense' && !!s.card_id && !isYearlySub(s));
+    const recurringExpenses = State.subscriptions.filter(s => s.type === 'expense' && !s.card_id && !isYearlySub(s));
+    const incomes = State.subscriptions.filter(s => s.type === 'income' && !isYearlySub(s));
+    const annual = State.subscriptions.filter(isYearlySub);
 
     document.getElementById('list-subscriptions').innerHTML =
       subscriptions.length ? subscriptions.map(s => this.subscriptionRow(s)).join('') : this.emptyMsg('No subscriptions yet');
@@ -5286,6 +5309,8 @@ const Settings = {
       recurringExpenses.length ? recurringExpenses.map(s => this.subscriptionRow(s)).join('') : this.emptyMsg('No recurring expenses yet');
     document.getElementById('list-recurring-income').innerHTML =
       incomes.length ? incomes.map(s => this.subscriptionRow(s)).join('') : this.emptyMsg('No recurring income yet');
+    document.getElementById('list-recurring-annual').innerHTML =
+      annual.length ? annual.map(s => this.subscriptionRow(s)).join('') : this.emptyMsg('No annual recurrences yet');
   },
 
   subscriptionRow(s) {
@@ -5314,7 +5339,9 @@ const Settings = {
               ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;">↻ 1 week</span>`
               : s.billing_frequency === 'quinzenal'
                 ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;">↻ 2 weeks</span>`
-                : `<span>Day ${s.billing_day}</span>`}
+                : s.billing_frequency === 'yearly'
+                  ? `<span class="type-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;">↻ ${(MONTH_NAMES[Number(s.billing_month) - 1] || '').slice(0, 3)} ${s.billing_day}</span>`
+                  : `<span>Day ${s.billing_day}</span>`}
             <span>·</span>
             <span>${escapeHtml(sourceLabel)}</span>
           </div>
@@ -5814,7 +5841,7 @@ function openCardForm(card = null) {
 /* ============================================
    SUBSCRIPTION FORM — recurring expense or income
    ============================================ */
-function openSubscriptionForm(subscription = null, defaultKind = 'subscription') {
+function openSubscriptionForm(subscription = null, defaultKind = 'subscription', defaultFrequency = null) {
   const isEdit = !!subscription;
 
   // Determine kind: 'subscription' (card expense) | 'recurring-expense' (account expense) | 'recurring-income'
@@ -5834,9 +5861,9 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
   const kindForcesAccount = kind === 'recurring-expense' || kind === 'recurring-income';
 
   const s = subscription || {
-    name: '', amount: '', billing_day: 1, type: kindType,
+    name: '', amount: '', billing_day: 1, billing_month: new Date().getMonth() + 1, type: kindType,
     account_id: null, card_id: null, category_id: null, owner: (Auth.getSession()?.userId || 'pv'), is_active: true,
-    billing_frequency: 'monthly', billing_start_date: null,
+    billing_frequency: defaultFrequency || 'monthly', billing_start_date: null,
   };
   let selectedFrequency = s.billing_frequency || 'monthly';
 
@@ -5875,18 +5902,26 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
       <label class="form-label">Frequency</label>
       <div class="cards-owner-tabs" id="sub-freq-toggle" style="margin-bottom:0;">
         <button class="cards-owner-tab ${selectedFrequency === 'monthly' ? 'active' : ''}" data-freq="monthly">Monthly</button>
-        <button class="cards-owner-tab ${selectedFrequency === 'quinzenal' ? 'active' : ''}" data-freq="quinzenal">Every 2 weeks</button>
+        <button class="cards-owner-tab ${selectedFrequency === 'yearly' ? 'active' : ''}" data-freq="yearly">Yearly</button>
+        <button class="cards-owner-tab ${selectedFrequency === 'quinzenal' ? 'active' : ''}" data-freq="quinzenal">2 weeks</button>
         <button class="cards-owner-tab ${selectedFrequency === 'weekly' ? 'active' : ''}" data-freq="weekly">Weekly</button>
       </div>
     </div>
 
-    <div class="form-field" id="sub-day-field" ${selectedFrequency !== 'monthly' ? 'style="display:none;"' : ''}>
+    <div class="form-field" id="sub-month-field" ${selectedFrequency !== 'yearly' ? 'style="display:none;"' : ''}>
+      <label class="form-label">Billing month</label>
+      <select class="form-select" id="sub-month">
+        ${MONTH_NAMES.map((name, i) => `<option value="${i + 1}" ${Number(s.billing_month) === i + 1 ? 'selected' : ''}>${name}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="form-field" id="sub-day-field" ${(selectedFrequency !== 'monthly' && selectedFrequency !== 'yearly') ? 'style="display:none;"' : ''}>
       <label class="form-label">Billing day</label>
       <input class="form-input" id="sub-day" type="number" min="1" max="31" value="${s.billing_day || 1}">
       <div class="form-help">Day of the month it gets charged / received</div>
     </div>
 
-    <div class="form-field" id="sub-start-field" ${selectedFrequency === 'monthly' ? 'style="display:none;"' : ''}>
+    <div class="form-field" id="sub-start-field" ${!isIntervalBased({ billing_frequency: selectedFrequency }) ? 'style="display:none;"' : ''}>
       <label class="form-label">Start date</label>
       <input class="form-input" id="sub-start-date" type="date" value="${s.billing_start_date || localToday()}">
       <div class="form-help">Date of the first / next payment</div>
@@ -5953,8 +5988,10 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
     btn.addEventListener('click', () => {
       selectedFrequency = btn.dataset.freq;
       document.querySelectorAll('#sub-freq-toggle [data-freq]').forEach(b => b.classList.toggle('active', b === btn));
-      document.getElementById('sub-day-field').style.display = selectedFrequency === 'monthly' ? '' : 'none';
-      document.getElementById('sub-start-field').style.display = selectedFrequency !== 'monthly' ? '' : 'none';
+      const isDayBased = selectedFrequency === 'monthly' || selectedFrequency === 'yearly';
+      document.getElementById('sub-day-field').style.display = isDayBased ? '' : 'none';
+      document.getElementById('sub-month-field').style.display = selectedFrequency === 'yearly' ? '' : 'none';
+      document.getElementById('sub-start-field').style.display = isDayBased ? 'none' : '';
     });
   });
 
@@ -5967,16 +6004,18 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
     const amountStr = document.getElementById('sub-amount').value.replace(/[^0-9.,]/g, '').replace(',', '.');
     const amount = parseFloat(amountStr);
     const name = document.getElementById('sub-name').value.trim();
-    const billing_day = selectedFrequency !== 'monthly' ? 1 : parseInt(document.getElementById('sub-day').value, 10);
-    const billing_start_date = selectedFrequency !== 'monthly' ? (document.getElementById('sub-start-date').value || null) : null;
+    const isDayBased = selectedFrequency === 'monthly' || selectedFrequency === 'yearly';
+    const billing_day = isDayBased ? parseInt(document.getElementById('sub-day').value, 10) : 1;
+    const billing_month = selectedFrequency === 'yearly' ? parseInt(document.getElementById('sub-month').value, 10) : null;
+    const billing_start_date = !isDayBased ? (document.getElementById('sub-start-date').value || null) : null;
     const owner = getSelectedOwner();
     const activeEl = document.getElementById('sub-active');
     const is_active = activeEl ? activeEl.checked : true;
 
     if (!name) return toast('Please enter a name', 'error');
     if (!amount || amount <= 0) return toast('Please enter a valid amount', 'error');
-    if (selectedFrequency !== 'monthly' && !billing_start_date) return toast('Please enter a start date', 'error');
-    if (selectedFrequency === 'monthly' && (!billing_day || billing_day < 1 || billing_day > 31)) return toast('Invalid billing day', 'error');
+    if (!isDayBased && !billing_start_date) return toast('Please enter a start date', 'error');
+    if (isDayBased && (!billing_day || billing_day < 1 || billing_day > 31)) return toast('Invalid billing day', 'error');
 
     // Warn about duplicate names (only on create or rename)
     const lowerName = name.toLowerCase();
@@ -6010,7 +6049,7 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription')
 
     try {
       const data = {
-        name, amount, billing_day, type: selectedType,
+        name, amount, billing_day, billing_month, type: selectedType,
         account_id, card_id, category_id, owner, is_active,
         billing_frequency: selectedFrequency,
         billing_start_date,
@@ -8995,6 +9034,7 @@ const Calendar = {
         return;
       }
 
+      if (!billingMonthMatches(s, month + 1)) return;
       const day = Number(s.billing_day);
       if (!day) return;
       const d = Math.min(day, this.daysInMonth(year, month));
@@ -9812,6 +9852,7 @@ const Dashboard = {
         });
         return;
       }
+      if (!billingMonthMatches(s, nextMonth + 1)) return;
       if (s.type === 'income') {
         const day = Number(s.billing_day);
         if (!day || day > CUTOFF) return;
@@ -9976,6 +10017,7 @@ const Dashboard = {
 
       // Card-charged subs: include in upcoming for tracking, but don't add to financial totals
       if (s.card_id) {
+        if (!billingMonthMatches(s, today.getMonth() + 1)) return;
         if (!s.last_confirmed_month || !s.last_confirmed_month.startsWith(ym.substring(0, 7))) {
           items.push({ ...s, _tracked: true });
         }
@@ -9996,7 +10038,8 @@ const Dashboard = {
         return;
       }
 
-      // Monthly — existing logic
+      // Monthly / yearly — existing logic
+      if (!billingMonthMatches(s, today.getMonth() + 1)) return;
       if (s.last_confirmed_month && s.last_confirmed_month.startsWith(ym.substring(0, 7))) return;
       items.push(s);
       if (s.type === 'income') income += amount;
@@ -10028,8 +10071,9 @@ const Dashboard = {
         });
         return;
       }
-      // Monthly: show in past only if last_confirmed_month is before the previous month
+      // Monthly/yearly: show in past only if last_confirmed_month is before the previous month
       // (confirmed for current month or later = already handled, don't show in past)
+      if (!billingMonthMatches(s, prevMonth + 1)) return;
       const prevMonthStart = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-01`;
       if (!s.last_confirmed_month || s.last_confirmed_month < prevMonthStart) {
         const lastDay = new Date(prevYear, prevMonth + 1, 0).getDate();
@@ -10715,7 +10759,7 @@ document.addEventListener('click', (e) => {
     if (what === 'category') openCategoryForm(null, addBtn.dataset.type || 'expense');
     if (what === 'account') openAccountForm(null);
     if (what === 'card') openCardForm(null);
-    if (what === 'subscription') openSubscriptionForm(null, addBtn.dataset.kind || 'subscription');
+    if (what === 'subscription') openSubscriptionForm(null, addBtn.dataset.kind || 'subscription', addBtn.dataset.freq || null);
     return;
   }
 
