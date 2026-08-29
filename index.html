@@ -3346,7 +3346,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.04</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.05</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3565,7 +3565,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 189.04 · Aug 20, 2026</div>
+          <div class="app-version">Version 189.05 · Aug 20, 2026</div>
         </div>
       </div>
     </section>
@@ -5865,9 +5865,6 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription',
 
   // Derive type from kind
   const kindType = kind === 'recurring-income' ? 'income' : 'expense';
-  // Derive source restriction from kind
-  const kindForcesCard = kind === 'subscription';
-  const kindForcesAccount = kind === 'recurring-expense' || kind === 'recurring-income';
 
   const s = subscription || {
     name: '', amount: '', billing_day: 1, billing_month: new Date().getMonth() + 1, type: kindType,
@@ -5876,8 +5873,9 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription',
   };
   let selectedFrequency = s.billing_frequency || 'monthly';
 
-  // Pre-select source based on kind
-  let selectedSource = kindForcesCard ? 'card' : 'account';
+  // Expense recurrences can be paid from either an account or a card — income always
+  // deposits into an account. Pre-select based on kind (edit reflects the existing row).
+  let selectedSource = kindType === 'income' ? 'account' : (kind === 'subscription' ? 'card' : 'account');
   let selectedAccountId = s.account_id;
   let selectedCardId = s.card_id;
   let selectedType = kindType;
@@ -5936,20 +5934,34 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription',
       <div class="form-help">Date of the first / next payment</div>
     </div>
 
-    ${kindForcesCard ? `
-      <div class="form-field">
-        <label class="form-label">${labels.sourceLabel}</label>
-        <select class="form-select" id="sub-card">
-          <option value="">— select card —</option>
-          ${cardOptions}
-        </select>
-      </div>
-    ` : `
+    ${kindType === 'income' ? `
       <div class="form-field">
         <label class="form-label">${labels.sourceLabel}</label>
         <select class="form-select" id="sub-account">
           <option value="">— select account —</option>
           ${accountOptions}
+        </select>
+      </div>
+    ` : `
+      <div class="form-field">
+        <label class="form-label">Pay with</label>
+        <div class="payment-source-toggle" id="sub-source-toggle">
+          <button type="button" data-source="account" class="${selectedSource === 'account' ? 'active' : ''}">🏦 Account</button>
+          <button type="button" data-source="card" class="${selectedSource === 'card' ? 'active' : ''}">💳 Card</button>
+        </div>
+      </div>
+      <div class="form-field" id="sub-account-field" ${selectedSource !== 'account' ? 'style="display:none;"' : ''}>
+        <label class="form-label">Paid from account</label>
+        <select class="form-select" id="sub-account">
+          <option value="">— select account —</option>
+          ${accountOptions}
+        </select>
+      </div>
+      <div class="form-field" id="sub-card-field" ${selectedSource !== 'card' ? 'style="display:none;"' : ''}>
+        <label class="form-label">Charged to card</label>
+        <select class="form-select" id="sub-card">
+          <option value="">— select card —</option>
+          ${cardOptions}
         </select>
       </div>
     `}
@@ -6001,6 +6013,15 @@ function openSubscriptionForm(subscription = null, defaultKind = 'subscription',
       document.getElementById('sub-day-field').style.display = isDayBased ? '' : 'none';
       document.getElementById('sub-month-field').style.display = selectedFrequency === 'yearly' ? '' : 'none';
       document.getElementById('sub-start-field').style.display = isDayBased ? 'none' : '';
+    });
+  });
+
+  document.getElementById('sub-source-toggle')?.querySelectorAll('[data-source]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedSource = btn.dataset.source;
+      document.querySelectorAll('#sub-source-toggle [data-source]').forEach(b => b.classList.toggle('active', b === btn));
+      document.getElementById('sub-account-field').style.display = selectedSource === 'account' ? '' : 'none';
+      document.getElementById('sub-card-field').style.display = selectedSource === 'card' ? '' : 'none';
     });
   });
 
