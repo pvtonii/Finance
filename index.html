@@ -3346,7 +3346,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.06</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.07</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3565,7 +3565,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 189.06 · Aug 30, 2026</div>
+          <div class="app-version">Version 189.07 · Aug 30, 2026</div>
         </div>
       </div>
     </section>
@@ -9920,7 +9920,15 @@ const Dashboard = {
     const liquidBalance = this.calcLiquidBalance();
     const pendingRec = this.calcRecurrencesPending();
 
-    // Cards due this calendar month only
+    // Already-entered future transactions baked into the Checking balance above —
+    // calcLiquidBalance() is deliberately unfiltered by date, so surface what that includes.
+    const todayStr = localToday();
+    const savingsAccountIds = new Set(State.accounts.filter(a => a.type === 'savings').map(a => a.id));
+    const futureTxs = State.transactions
+      .filter(t => t.account_id && !t.card_id && !savingsAccountIds.has(t.account_id) && (t.date || '') > todayStr)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    // Cards due this month, or overdue from an earlier month
     const cardsDueItems = State.cards.map(card => {
       const m = Invoice.getNextUnpaidInvoice(card.id);
       if (!m) return null;
@@ -9929,8 +9937,9 @@ const Dashboard = {
       if (!isDueByMonth(dueDate, nowYear, nowMonth)) return null;
       const amount = Math.max(0, Invoice.getInvoiceTotal(card.id, m) - Invoice.getInvoicePaid(card.id, m));
       if (amount === 0) return null;
+      const overdue = dueDate.getFullYear() < nowYear || (dueDate.getFullYear() === nowYear && dueDate.getMonth() < nowMonth);
       const dueDateStr = dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      return { name: card.name, amount, dueDateStr };
+      return { name: card.name, amount, dueDateStr, overdue };
     }).filter(Boolean);
     const cardsDue = cardsDueItems.reduce((s, x) => s + x.amount, 0);
 
@@ -9959,9 +9968,10 @@ const Dashboard = {
       </div>`;
 
     const freqBadge = freq => freq ? `<span style="font-size:0.6rem;color:${FREQ_COLORS[freq]};font-weight:600;margin-left:5px;">↻ ${freq}</span>` : '';
-    const itemRow = (name, amt, sign, cls, date = null, freq = null) =>
+    const overdueBadge = overdue => overdue ? `<span style="font-size:0.6rem;color:var(--danger);font-weight:600;margin-left:5px;text-transform:uppercase;letter-spacing:0.02em;">overdue</span>` : '';
+    const itemRow = (name, amt, sign, cls, date = null, freq = null, overdue = false) =>
       `<div style="display:flex;justify-content:space-between;padding:3px 0 3px 12px;">
-        <span style="color:var(--text-tertiary);font-size:0.8125rem;">${escapeHtml(name)}${date ? `<span style="font-size:0.6rem;opacity:0.5;margin-left:5px;">${date}</span>` : ''}${freqBadge(freq)}</span>
+        <span style="color:var(--text-tertiary);font-size:0.8125rem;">${escapeHtml(name)}${date ? `<span style="font-size:0.6rem;opacity:0.5;margin-left:5px;">${date}</span>` : ''}${freqBadge(freq)}${overdueBadge(overdue)}</span>
         <span class="text-mono ${cls}" style="font-size:0.8125rem;">${sign}${App.formatCurrency(amt)}</span>
       </div>`;
 
@@ -9986,7 +9996,7 @@ const Dashboard = {
     const section = (label, pending, handled, sign, cls, total) => {
       if (!pending.length && !handled.length) return '';
       return sectionRow(label, (sign === '+' ? '+' : '-') + App.formatCurrency(total), cls)
-        + pending.map(s => itemRow(s.name, s.amount, sign, cls, itemDate(s), itemFreq(s))).join('')
+        + pending.map(s => itemRow(s.name, s.amount, sign, cls, itemDate(s), itemFreq(s), s._overdue)).join('')
         + handled.map(s => handledRow(s, s.amount, sign, lsSkipIds.has(s.id))).join('');
     };
 
@@ -10032,7 +10042,8 @@ const Dashboard = {
     const body = `
       <div style="padding-bottom:var(--space-2);">
         ${sectionRow('Checking balance', App.formatCurrency(liquidBalance), liquidBalance >= 0 ? 'text-success' : 'text-danger')}
-        ${cardsDueItems.length ? sectionRow(`Cards due (${monthName})`, '-' + App.formatCurrency(cardsDue), 'text-danger') + cardsDueItems.map(c => itemRow(c.name, c.amount, '-', 'text-danger', c.dueDateStr)).join('') : ''}
+        ${futureTxs.length ? futureTxs.map(t => itemRow(t.description || '—', Number(t.amount) || 0, t.type === 'income' ? '+' : '-', t.type === 'income' ? 'text-success' : 'text-danger', new Date(t.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))).join('') + `<div style="font-size:0.6875rem;color:var(--text-tertiary);padding:2px 0 6px 12px;">already counted in the checking balance above</div>` : ''}
+        ${cardsDueItems.length ? sectionRow(`Cards due (${monthName})`, '-' + App.formatCurrency(cardsDue), 'text-danger') + cardsDueItems.map(c => itemRow(c.name, c.amount, '-', 'text-danger', c.dueDateStr, null, c.overdue)).join('') : ''}
         ${section('Bills', pendingBills, handledBills, '-', 'text-danger', pendingRec.accountExpense)}
         ${section('Income', pendingIncome, handledIncome, '+', 'text-success', pendingRec.income)}
         ${divider}
@@ -10050,6 +10061,11 @@ const Dashboard = {
   calcRecurrencesPending() {
     const today = new Date();
     const ym = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-01';
+    // A sub is "overdue" (not just pending this month) once it's missed confirming for
+    // a full prior month too — vs. simply not-yet-due-this-month.
+    const prevMonthRef = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const prevYm = `${prevMonthRef.getFullYear()}-${String(prevMonthRef.getMonth() + 1).padStart(2, '0')}-01`;
+    const isOverdue = s => !s.last_confirmed_month || s.last_confirmed_month < prevYm;
 
     const items = [];
     let accountExpense = 0;
@@ -10064,7 +10080,7 @@ const Dashboard = {
       if (s.card_id) {
         if (!billingMonthMatches(s, today.getMonth() + 1)) return;
         if (!s.last_confirmed_month || !s.last_confirmed_month.startsWith(ym.substring(0, 7))) {
-          items.push({ ...s, _tracked: true });
+          items.push({ ...s, _tracked: true, _overdue: isOverdue(s) });
         }
         return;
       }
@@ -10086,7 +10102,7 @@ const Dashboard = {
       // Monthly / yearly — existing logic
       if (!billingMonthMatches(s, today.getMonth() + 1)) return;
       if (s.last_confirmed_month && s.last_confirmed_month.startsWith(ym.substring(0, 7))) return;
-      items.push(s);
+      items.push({ ...s, _overdue: isOverdue(s) });
       if (s.type === 'income') income += amount;
       else accountExpense += amount;
     });
