@@ -3106,9 +3106,6 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
   margin-bottom: var(--space-2);
   gap: var(--space-2);
 }
-.upcoming-view-toggle { display:flex; gap:2px; background:var(--bg-tertiary); border-radius:var(--radius-full); padding:2px; flex-shrink:0; }
-.uv-tab { font-size:0.625rem; font-weight:500; padding:2px 8px; border-radius:var(--radius-full); border:none; background:none; color:var(--text-tertiary); cursor:pointer; white-space:nowrap; }
-.uv-tab.active { background:var(--text-primary); color:var(--bg-primary); }
 .upcoming-skip { flex-shrink:0; background:var(--bg-tertiary); color:var(--text-tertiary); border:1px solid var(--border-subtle); padding:6px 10px; border-radius:var(--radius-md); font-size:0.75rem; font-weight:500; cursor:pointer; white-space:nowrap; transition:all var(--duration); }
 .upcoming-skip:active { background:var(--danger); color:white; border-color:var(--danger); }
 @media (hover:hover) { .upcoming-skip:hover { background:var(--danger); color:white; border-color:var(--danger); } }
@@ -3346,7 +3343,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.10</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.11</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3565,7 +3562,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 189.10 · Sep 1, 2026</div>
+          <div class="app-version">Version 189.11 · Sep 1, 2026</div>
         </div>
       </div>
     </section>
@@ -9639,8 +9636,6 @@ const Cards = {
 
 
 const Dashboard = {
-  upcomingView: 'current', // 'current' | 'past'
-
   /** Returns a CSS class for an upcoming-row's outline based on its date vs today */
   dateOutlineClass(dateStr) {
     if (!dateStr) return '';
@@ -10081,16 +10076,20 @@ const Dashboard = {
         return;
       }
 
-      // Interval-based (weekly / quinzenal) — generate each occurrence as a separate item
+      // Interval-based (weekly / quinzenal) — generate each occurrence as a separate
+      // item, for this month and the one before (so a missed occurrence from a
+      // prior month still surfaces here instead of only in a separate "Past" list).
       if (isIntervalBased(s) && s.billing_start_date) {
         const confirmedDates = JSON.parse(s.confirmed_dates || '[]');
-        const occurrences = getOccurrences(s, today.getFullYear(), today.getMonth());
-        occurrences.forEach(dateStr => {
-          if (!confirmedDates.includes(dateStr)) {
-            items.push({ ...s, _occurrence_date: dateStr });
-            if (s.type === 'income') income += amount;
-            else accountExpense += amount;
-          }
+        const prevMonthRef = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        [[prevMonthRef.getFullYear(), prevMonthRef.getMonth()], [today.getFullYear(), today.getMonth()]].forEach(([y, m]) => {
+          getOccurrences(s, y, m).forEach(dateStr => {
+            if (!confirmedDates.includes(dateStr)) {
+              items.push({ ...s, _occurrence_date: dateStr });
+              if (s.type === 'income') income += amount;
+              else accountExpense += amount;
+            }
+          });
         });
         return;
       }
@@ -10136,37 +10135,6 @@ const Dashboard = {
     });
 
     return { items, accountExpense, cardExpense, income };
-  },
-
-  calcRecurrencesPastDue() {
-    const today = new Date();
-    const prevMonth = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
-    const prevYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
-    const prevYM = prevYear + '-' + String(prevMonth + 1).padStart(2, '0');
-    const items = [];
-
-    State.subscriptions.filter(s => s.is_active !== false).forEach(s => {
-      if (isIntervalBased(s) && s.billing_start_date) {
-        const confirmedDates = JSON.parse(s.confirmed_dates || '[]');
-        getOccurrences(s, prevYear, prevMonth).forEach(dateStr => {
-          if (!confirmedDates.includes(dateStr)) items.push({ ...s, _past_date: dateStr });
-        });
-        return;
-      }
-      // Monthly/yearly: show in past only if last_confirmed_month is before the previous month
-      // (confirmed for current month or later = already handled, don't show in past)
-      if (!billingMonthMatches(s, prevMonth + 1)) return;
-      const prevMonthStart = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-01`;
-      if (!s.last_confirmed_month || s.last_confirmed_month < prevMonthStart) {
-        const lastDay = new Date(prevYear, prevMonth + 1, 0).getDate();
-        const day = Math.min(Number(s.billing_day) || 1, lastDay);
-        const dateStr = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        items.push({ ...s, _past_date: dateStr });
-      }
-    });
-
-    items.sort((a, b) => (a._past_date || '').localeCompare(b._past_date || ''));
-    return items;
   },
 
   getSkippedThisMonth() {
@@ -10225,56 +10193,32 @@ const Dashboard = {
     const container = document.getElementById('dash-upcoming');
     if (!container) return;
 
-    const view = this.upcomingView;
-    const pastItems = this.calcRecurrencesPastDue();
     const hasCurrent = items.length > 0 || pendingCards.length > 0 || earlyRec.length > 0;
-    const hasPast = pastItems.length > 0;
 
-    // Nothing anywhere → hide the whole card (and reset to current view)
-    if (!hasCurrent && !hasPast) { container.innerHTML = ''; this.upcomingView = 'current'; return; }
+    // Nothing pending → hide the whole card
+    if (!hasCurrent) { container.innerHTML = ''; return; }
 
-    // If past is now empty and we're still on past view, snap back to current
-    if (!hasPast && view === 'past') { this.upcomingView = 'current'; view = 'current'; }
-
-    // Only show the Past tab when there's actually something past
-    const toggle = hasPast ? `
-      <div class="upcoming-view-toggle">
-        <button class="uv-tab ${view === 'current' ? 'active' : ''}" data-upcoming-view="current">This month</button>
-        <button class="uv-tab ${view === 'past' ? 'active' : ''}" data-upcoming-view="past">Past</button>
-      </div>` : '';
-
-    const currentCount = items.length + pendingCards.length + earlyRec.length;
-    const title = view === 'current' ? 'Upcoming this month' : 'Past unconfirmed';
-    const count = view === 'current' ? currentCount : pastItems.length;
+    const count = items.length + pendingCards.length + earlyRec.length;
 
     container.innerHTML = `
       <div class="card upcoming-card fade-in">
         <div class="upcoming-header">
-          <span class="upcoming-title">${title}</span>
-          <div style="display:flex;align-items:center;gap:var(--space-2);">
-            <span class="upcoming-count">${count}</span>
-            ${toggle}
-          </div>
+          <span class="upcoming-title">Upcoming this month</span>
+          <span class="upcoming-count">${count}</span>
         </div>
-        ${view === 'current' ? `
-          ${!hasCurrent ? `<div style="font-size:0.8125rem;color:var(--text-tertiary);padding:var(--space-2) 0;">Nothing left this month. Check <strong>Past</strong> for missed items.</div>` : ''}
-          ${(() => {
-            const now2 = new Date();
-            const ym2 = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,'0')}`;
-            const lastDay2 = new Date(now2.getFullYear(), now2.getMonth()+1, 0).getDate();
-            const cardKey = c => { const m = Invoice.getNextUnpaidInvoice(c.id); if (!m) return '9999-99-99'; const [y,mo]=m.split('-').map(Number); const d=new Date(y,mo-1,Number(c.due_day)); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
-            const subKey = s => s._occurrence_date || `${ym2}-${String(Math.min(Number(s.billing_day)||1,lastDay2)).padStart(2,'0')}`;
-            const all = [
-              ...pendingCards.map(c => ({ type:'card', data:c, k:cardKey(c) })),
-              ...items.map(s => ({ type:'sub', data:s, k:subKey(s) })),
-              ...earlyRec.map(s => ({ type:'sub', data:s, k:s._early_date }))
-            ].sort((a,b) => a.k.localeCompare(b.k));
-            return all.map(r => r.type==='card' ? this.upcomingCardRow(r.data) : this.upcomingRow(r.data)).join('');
-          })()}
-        ` : `
-          ${pastItems.length === 0 ? `<div style="font-size:0.8125rem;color:var(--text-tertiary);padding:var(--space-2) 0;">All caught up — nothing unconfirmed last month.</div>` : ''}
-          ${pastItems.map(s => this.upcomingPastRow(s)).join('')}
-        `}
+        ${(() => {
+          const now2 = new Date();
+          const ym2 = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,'0')}`;
+          const lastDay2 = new Date(now2.getFullYear(), now2.getMonth()+1, 0).getDate();
+          const cardKey = c => { const m = Invoice.getNextUnpaidInvoice(c.id); if (!m) return '9999-99-99'; const [y,mo]=m.split('-').map(Number); const d=new Date(y,mo-1,Number(c.due_day)); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+          const subKey = s => s._occurrence_date || `${ym2}-${String(Math.min(Number(s.billing_day)||1,lastDay2)).padStart(2,'0')}`;
+          const all = [
+            ...pendingCards.map(c => ({ type:'card', data:c, k:cardKey(c) })),
+            ...items.map(s => ({ type:'sub', data:s, k:subKey(s) })),
+            ...earlyRec.map(s => ({ type:'sub', data:s, k:s._early_date }))
+          ].sort((a,b) => a.k.localeCompare(b.k));
+          return all.map(r => r.type==='card' ? this.upcomingCardRow(r.data) : this.upcomingRow(r.data)).join('');
+        })()}
       </div>
     `;
 
@@ -10296,13 +10240,6 @@ const Dashboard = {
         skipRecurrence(id, date);
       });
     });
-    container.querySelectorAll('[data-upcoming-view]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        Dashboard.upcomingView = btn.dataset.upcomingView;
-        Dashboard.render();
-      });
-    });
-
     // Skipped this month section
     this.renderSkipped(container);
   },
@@ -10393,30 +10330,6 @@ const Dashboard = {
     });
   },
 
-  upcomingPastRow(s) {
-    const isIncome = s.type === 'income';
-    const isCard = !!s.card_id;
-    const source = isCard ? State.cards.find(c => c.id === s.card_id) : State.accounts.find(a => a.id === s.account_id);
-    const sourceLabel = source ? (isCard ? '💳 ' : '🏦 ') + source.name : '— no source';
-    const { parent: catParent, child: catChild } = categoryPath(s.category_id);
-    const icon = isCard ? '🔄' : (catChild?.icon || catParent?.icon || (isIncome ? '💰' : '🔁'));
-    const sign = isIncome ? '+' : '-';
-    const amountClass = isIncome ? 'text-success' : 'text-danger';
-    const dateLabel = new Date(s._past_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    return `
-      <div class="upcoming-row">
-        <div class="upcoming-icon" style="opacity:0.6;">${icon}</div>
-        <div class="upcoming-info">
-          <div class="upcoming-name" style="opacity:0.7;">${escapeHtml(s.name)}</div>
-          <div class="upcoming-meta">${dateLabel} · ${escapeHtml(sourceLabel)}</div>
-        </div>
-        <div class="upcoming-amount ${amountClass}">${sign}${App.formatCurrency(s.amount)}</div>
-        <button class="upcoming-confirm" data-confirm-rec="${s.id}" data-confirm-date="${s._past_date}">✓</button>
-        <button class="upcoming-skip" data-skip-rec="${s.id}" data-skip-date="${s._past_date}">✗</button>
-      </div>
-    `;
-  },
-
   upcomingCardRow(card) {
     const m = Invoice.getNextUnpaidInvoice(card.id);
     const amount = Math.max(0, Invoice.getInvoiceTotal(card.id, m) - Invoice.getInvoicePaid(card.id, m));
@@ -10426,7 +10339,10 @@ const Dashboard = {
     const isNextMonth = dueDate.getFullYear() !== now.getFullYear() || dueDate.getMonth() !== now.getMonth();
     const dueDateLabel = dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const dueDateStr = `${dueDate.getFullYear()}-${String(dueDate.getMonth()+1).padStart(2,'0')}-${String(dueDate.getDate()).padStart(2,'0')}`;
-    const dateStyle = isNextMonth ? 'color:#f59e0b;' : '';
+    const todayStr = localToday();
+    const dateStyle = dueDateStr < todayStr ? 'color:var(--danger);font-weight:600;'
+      : (dueDateStr === todayStr || isNextMonth) ? 'color:#f59e0b;'
+      : '';
     const openMonth = Invoice.computeMonthString(localToday(), card);
     const isOpen = openMonth === m;
     const openBadge = isOpen ? `<span style="font-size:0.6rem;font-weight:600;color:#f59e0b;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);border-radius:4px;padding:1px 4px;margin-left:4px;letter-spacing:0.03em;">open</span>` : '';
@@ -10454,12 +10370,23 @@ const Dashboard = {
     const icon = isCard ? '🔄' : (catChild?.icon || catParent?.icon || (isIncome ? '💰' : '🔁'));
     const sign = isIncome ? '+' : '-';
     const amountClass = isIncome ? 'text-success' : 'text-danger';
+    const dateTextColor = dateStr => {
+      if (!dateStr) return null;
+      const today = localToday();
+      if (dateStr < today) return 'var(--danger)';
+      if (dateStr === today) return '#f59e0b';
+      return null;
+    };
     const metaDate = s._early_date
       ? `<span style="color:#f59e0b;">${new Date(s._early_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`
       : s._occurrence_date
-        ? new Date(s._occurrence_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        ? (() => {
+            const label = new Date(s._occurrence_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const c = dateTextColor(s._occurrence_date);
+            return c ? `<span style="color:${c};font-weight:600;">${label}</span>` : label;
+          })()
         : `Day ${s.billing_day}`;
-    const freqKey = s._occurrence_date
+    const freqKey = isIntervalBased(s)
       ? (s.billing_frequency === 'weekly' ? 'weekly' : 'biweekly')
       : isYearly(s) ? 'yearly' : null;
     const freqLabel = freqKey === 'weekly' ? '↻ 1 week' : freqKey === 'biweekly' ? '↻ 2 weeks' : freqKey === 'yearly' ? '↻ yearly' : null;
