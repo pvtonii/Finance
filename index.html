@@ -3343,7 +3343,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.11</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.12</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3562,7 +3562,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 189.11 · Sep 1, 2026</div>
+          <div class="app-version">Version 189.12 · Sep 1, 2026</div>
         </div>
       </div>
     </section>
@@ -9339,7 +9339,9 @@ const Cards = {
       const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
       const colorClass = pct < 60 ? 'low' : pct < 85 ? 'medium' : 'high';
       const pctColor = pct < 60 ? 'var(--success)' : pct < 85 ? 'var(--warning)' : 'var(--danger)';
-      const dueColor = nextUnpaidAmount > 0 ? (openMonth === nextUnpaidMonth ? 'var(--warning)' : 'var(--danger)') : 'var(--text-primary)';
+      const isClosedInvoice = nextUnpaidAmount > 0 && openMonth !== nextUnpaidMonth;
+      const dueColor = nextUnpaidAmount > 0 ? (isClosedInvoice ? 'var(--danger)' : 'var(--warning)') : 'var(--text-primary)';
+      const closedBadge = isClosedInvoice ? `<span style="font-size:0.6rem;font-weight:600;color:var(--danger);background:rgba(255,69,58,0.12);border:1px solid rgba(255,69,58,0.3);border-radius:4px;padding:1px 4px;margin-left:4px;letter-spacing:0.03em;">closed</span>` : '';
 
       return `
         <div class="card-item" data-open-card="${card.id}">
@@ -9373,7 +9375,7 @@ const Cards = {
             </div>
             <div class="card-stat-divider"></div>
             <div class="card-stat">
-              <div class="card-stat-label">Due</div>
+              <div class="card-stat-label">Due${closedBadge}</div>
               <div class="card-stat-value" style="color:${dueColor};">${App.formatCurrency(nextUnpaidAmount)}</div>
               <div class="card-stat-sub">${nextUnpaidAmount > 0 ? 'Pay by ' + dueDateLabel : 'All paid ✓'}</div>
             </div>
