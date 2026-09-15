@@ -3354,7 +3354,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.18</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.19</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3573,7 +3573,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 189.18 · Sep 1, 2026</div>
+          <div class="app-version">Version 189.19 · Sep 14, 2026</div>
         </div>
       </div>
     </section>
@@ -4984,7 +4984,11 @@ const Modal = {
   open(title, bodyHtml, { sheet = false } = {}) {
     const el = document.getElementById('modal');
     document.getElementById('modal-title').textContent = title;
-    document.getElementById('modal-body').innerHTML = bodyHtml;
+    const bodyEl = document.getElementById('modal-body');
+    bodyEl.innerHTML = bodyHtml;
+    // Reusing the same scrollable element across opens can leave it scrolled
+    // from the previous modal's content — always start fresh at the top.
+    bodyEl.scrollTop = 0;
     document.getElementById('modal-overlay').classList.add('active');
     el.classList.toggle('modal-sheet', sheet);
     el.classList.add('active');
@@ -6928,10 +6932,13 @@ function openTransactionForm(transaction = null) {
     }
     document.getElementById('inst-minus').disabled = installments <= 1;
     document.getElementById('inst-plus').disabled = installments >= 24;
-    // Show/hide freq toggle for debit installments
+    // Toggle only visibility (not display) here — this runs on every +/- tap, and
+    // flipping `display` would remove/restore the block from layout flow, shifting
+    // everything below it and causing the next rapid tap to land on the wrong
+    // element. `updateInstallmentsVisibility()` (source change) owns `display`.
     const freqBlock = document.getElementById('debit-freq-block');
     if (freqBlock && selectedSource === 'account') {
-      freqBlock.style.display = installments > 1 ? '' : 'none';
+      freqBlock.style.visibility = installments > 1 ? 'visible' : 'hidden';
     }
   }
 
@@ -6943,7 +6950,13 @@ function openTransactionForm(transaction = null) {
       block.classList.remove('hidden');
       if (selectedSource === 'account') {
         if (label) label.textContent = 'Debit installments';
-        if (freqBlock) freqBlock.style.display = installments > 1 ? '' : 'none';
+        // Keep it in flow (reserve its space) whenever debit is the source, so
+        // tapping the installments stepper only ever toggles visibility, never
+        // triggers a layout shift below it.
+        if (freqBlock) {
+          freqBlock.style.display = '';
+          freqBlock.style.visibility = installments > 1 ? 'visible' : 'hidden';
+        }
       } else {
         if (label) label.textContent = 'Installments';
         if (freqBlock) freqBlock.style.display = 'none';
