@@ -3375,7 +3375,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.07</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.08</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3553,7 +3553,18 @@ html { scroll-behavior: smooth; }
             Clear
           </button>
         </div>
-        <div class="section-hint">Last 15 actions made in the app, synced across all devices.</div>
+        <div class="section-hint">Synced across all devices. Shows the last 15 by default — search or pick a month/year to see more.</div>
+        <div class="tx-search-wrap">
+          <input class="tx-search-input" id="history-search" type="text" placeholder="🔍 Search activity…" autocomplete="off">
+          <button class="tx-search-clear" id="history-search-clear" style="display:none;">✕</button>
+        </div>
+        <div style="display:flex;margin-bottom:var(--space-3);">
+          <div class="tx-month-nav" id="history-month-nav" style="background:var(--bg-tertiary);border:1px solid var(--border-subtle);">
+            <button data-history-month-prev>‹</button>
+            <span class="month-label" data-history-month-label></span>
+            <button data-history-month-next>›</button>
+          </div>
+        </div>
         <div id="history-list" class="item-list"></div>
       </div>
 
@@ -3594,7 +3605,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 190.07 · Oct 1, 2026</div>
+          <div class="app-version">Version 190.08 · Oct 1, 2026</div>
         </div>
       </div>
     </section>
@@ -4090,6 +4101,8 @@ const FALLBACK_USERS = {
  * ============================================ */
 const ActivityLog = {
   MAX_DISPLAY: 15,
+  filterMonth: 'all', // 'all' | 'YYYY' | 'YYYY-MM' — History tab only
+  searchTerm: '',      // History tab only
 
   /**
    * Record an action — fires-and-forgets to Supabase (non-blocking).
@@ -4111,17 +4124,51 @@ const ActivityLog = {
     });
   },
 
-  async fetch() {
+  /** month: 'all' | 'YYYY' | 'YYYY-MM' (ignored when search is set — search scans all time,
+   *  same bypass behavior as Transactions.searchTerm vs Transactions.filterMonth). */
+  async fetch({ month = null, search = '', limit = this.MAX_DISPLAY } = {}) {
     if (!db) return [];
-    const { data, error } = await db.from('activity_log')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(this.MAX_DISPLAY);
+    let query = db.from('activity_log').select('*').order('created_at', { ascending: false });
+
+    const hasSearch = (search || '').trim().length > 0;
+    if (hasSearch) {
+      query = query.ilike('description', `%${search.trim()}%`);
+    } else if (month && month !== 'all') {
+      const isYear = month.length === 4;
+      const [y, m] = isYear ? [Number(month), 1] : month.split('-').map(Number);
+      const start = isYear ? `${y}-01-01` : `${month}-01`;
+      const endDate = isYear ? new Date(y + 1, 0, 1) : new Date(y, m, 1);
+      const end = endDate.toISOString().split('T')[0];
+      query = query.gte('created_at', start).lt('created_at', end);
+    }
+
+    if (limit) query = query.limit(limit);
+
+    const { data, error } = await query;
     if (error) {
       console.warn('ActivityLog fetch failed:', error.message);
       return [];
     }
     return data || [];
+  },
+
+  updateMonthNav() {
+    const nav = document.getElementById('history-month-nav');
+    if (!nav) return;
+    const label = nav.querySelector('.month-label');
+    if (!label) return;
+    const hasSearch = (this.searchTerm || '').trim().length > 0;
+    if (this.filterMonth === 'all' || hasSearch) {
+      label.textContent = 'All time';
+      nav.classList.remove('active');
+    } else if (this.filterMonth.length === 4) {
+      label.textContent = this.filterMonth;
+      nav.classList.add('active');
+    } else {
+      const [y, m] = this.filterMonth.split('-').map(Number);
+      label.textContent = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      nav.classList.add('active');
+    }
   },
 
   async clear() {
@@ -4141,13 +4188,21 @@ const ActivityLog = {
 
     container.innerHTML = `<div class="empty-state-text" style="text-align:center;padding:var(--space-4);">Loading…</div>`;
 
-    const entries = await this.fetch();
+    const hasSearch = (this.searchTerm || '').trim().length > 0;
+    const isFiltered = hasSearch || this.filterMonth !== 'all';
+    const entries = await this.fetch({
+      month: this.filterMonth,
+      search: this.searchTerm,
+      limit: isFiltered ? 500 : this.MAX_DISPLAY,
+    });
+
+    this.updateMonthNav();
 
     if (!entries.length) {
       container.innerHTML = `
         <div class="empty-state">
-          <div class="empty-state-title">No activity yet</div>
-          <p class="empty-state-text">Actions taken in the app will appear here, synced across all devices.</p>
+          <div class="empty-state-title">No activity${isFiltered ? ' found' : ' yet'}</div>
+          <p class="empty-state-text">${isFiltered ? 'Nothing matches this search or time range.' : 'Actions taken in the app will appear here, synced across all devices.'}</p>
         </div>
       `;
       return;
@@ -10877,6 +10932,23 @@ if (searchInput) {
   });
 }
 
+// History search input — filters activity log in real time
+const historySearchInput = document.getElementById('history-search');
+const historySearchClear = document.getElementById('history-search-clear');
+if (historySearchInput) {
+  historySearchInput.addEventListener('input', (e) => {
+    ActivityLog.searchTerm = e.target.value;
+    historySearchClear.style.display = e.target.value ? '' : 'none';
+    ActivityLog.render();
+  });
+  historySearchClear.addEventListener('click', () => {
+    historySearchInput.value = '';
+    ActivityLog.searchTerm = '';
+    historySearchClear.style.display = 'none';
+    ActivityLog.render();
+  });
+}
+
 // Category filter dropdown
 const categorySelect = document.getElementById('tx-category-filter');
 if (categorySelect) {
@@ -11220,6 +11292,47 @@ document.addEventListener('click', (e) => {
     const next = new Date(y, m, 1);
     Insights.reportMonth = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0');
     Insights.render(); return;
+  }
+
+  // History — month/year/all-time navigation (same cycle as Transactions' month nav)
+  if (e.target.closest('[data-history-month-prev]')) {
+    const cur = ActivityLog.filterMonth;
+    if (cur === 'all') {
+      const d = new Date(); ActivityLog.filterMonth = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    } else if (cur.length === 4) {
+      ActivityLog.filterMonth = String(Number(cur) - 1);
+    } else {
+      const [y, m] = cur.split('-').map(Number);
+      const prev = new Date(y, m - 2, 1);
+      ActivityLog.filterMonth = prev.getFullYear() + '-' + String(prev.getMonth() + 1).padStart(2, '0');
+    }
+    ActivityLog.render(); return;
+  }
+  if (e.target.closest('[data-history-month-next]')) {
+    const cur = ActivityLog.filterMonth;
+    if (cur === 'all') {
+      // no-op — 'all' has no next
+    } else if (cur.length === 4) {
+      ActivityLog.filterMonth = String(Number(cur) + 1);
+    } else {
+      const [y, m] = cur.split('-').map(Number);
+      const next = new Date(y, m, 1);
+      ActivityLog.filterMonth = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0');
+    }
+    ActivityLog.render(); return;
+  }
+  if (e.target.closest('[data-history-month-label]')) {
+    // Cycle: single month -> whole year -> all time -> single month
+    const cur = ActivityLog.filterMonth;
+    if (cur === 'all') {
+      const d = new Date(); ActivityLog.filterMonth = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    } else if (cur.length === 4) {
+      ActivityLog.filterMonth = 'all';
+    } else {
+      const [y] = cur.split('-').map(Number);
+      ActivityLog.filterMonth = String(y);
+    }
+    ActivityLog.render(); return;
   }
 
   // Weekday heatmap — bills/no-bills toggle
