@@ -3375,7 +3375,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.05</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.06</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3594,7 +3594,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 190.05 · Oct 1, 2026</div>
+          <div class="app-version">Version 190.06 · Oct 1, 2026</div>
         </div>
       </div>
     </section>
@@ -8995,24 +8995,20 @@ const Insights = {
       return { ...m, byCat, total };
     });
 
-    // Find top 5 categories overall (for the stacks); rest grouped as "Other"
+    // Every category that shows up in the window, sorted by overall total — no cap, no "Other" bucket.
     const overallTotals = {};
     monthData.forEach(m => {
       Object.entries(m.byCat).forEach(([k, v]) => {
         overallTotals[k] = (overallTotals[k] || 0) + v;
       });
     });
-    const topCatIds = Object.entries(overallTotals)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([id]) => id);
+    const allCatIds = Object.keys(overallTotals).sort((a, b) => overallTotals[b] - overallTotals[a]);
 
-    const palette = ['#f87171', '#fbbf24', '#4ade80', '#60a5fa', '#a78bfa', '#94a3b8'];
-    const catMeta = topCatIds.map((id, i) => {
-      const cat = State.categories.find(c => c.id === id);
-      return { id, name: cat?.name || 'Uncategorized', color: palette[i] };
+    const catMeta = allCatIds.map((id, i) => {
+      const cat = id === 'uncategorized' ? null : State.categories.find(c => c.id === id);
+      const hue = Math.round((i * 360) / Math.max(allCatIds.length, 1));
+      return { id, name: cat?.name || 'Uncategorized', color: `hsl(${hue}, 62%, 58%)` };
     });
-    catMeta.push({ id: '__other', name: 'Other', color: palette[5] });
 
     const maxTotal = Math.max(...monthData.map(m => m.total), 1);
 
@@ -9030,14 +9026,7 @@ const Insights = {
       const total = m.total;
       const heightPct = (total / maxTotal) * 100;
       const segments = catMeta.map(c => {
-        let val;
-        if (c.id === '__other') {
-          val = Object.entries(m.byCat)
-            .filter(([id]) => !topCatIds.includes(id))
-            .reduce((s, [, v]) => s + v, 0);
-        } else {
-          val = m.byCat[c.id] || 0;
-        }
+        const val = m.byCat[c.id] || 0;
         if (val === 0) return '';
         const segH = total > 0 ? (val / total * 100) : 0;
         return `<div class="stack-segment" style="height:${segH}%; background:${c.color};" title="${c.name}: ${App.formatCurrency(val)}"></div>`;
@@ -9052,58 +9041,18 @@ const Insights = {
       `;
     }).join('');
 
-    const topCatOverallSum = topCatIds.reduce((s, id) => s + (overallTotals[id] || 0), 0);
-    const grandTotal = monthData.reduce((s, m) => s + m.total, 0);
-    const otherOverallTotal = grandTotal - topCatOverallSum;
-
-    const legendHtml = catMeta.filter(c => overallTotals[c.id] || (c.id === '__other' && otherOverallTotal > 0))
-      .map(c => {
-        const val = c.id === '__other' ? otherOverallTotal : overallTotals[c.id];
-        return `
-          <div class="stack-legend-item">
-            <span class="stack-legend-dot" style="background:${c.color};"></span>
-            ${escapeHtml(c.name)} <span style="color:var(--text-secondary);">${App.formatCurrency(val)}</span>
-          </div>
-        `;
-      }).join('');
-
-    // "Other" breakdown — every category outside the top 5, shown inline (no click needed).
-    // Specifically-named categories get their own row; generic catch-all "Other" leaf
-    // categories (which repeat under several parents) are merged into a single Misc line
-    // instead of showing up as three confusing "Other" rows.
-    const otherEntries = Object.entries(overallTotals).filter(([id]) => !topCatIds.includes(id));
-    const namedOthers = [];
-    let miscTotal = 0;
-    otherEntries.forEach(([id, val]) => {
-      if (id === 'uncategorized') { miscTotal += val; return; }
-      const { parent, child } = categoryPath(id);
-      if (child && child.name !== 'Other') {
-        namedOthers.push({ icon: child.icon, label: `${parent?.name || ''} · ${child.name}`, val });
-      } else if (!child && parent) {
-        namedOthers.push({ icon: parent.icon, label: parent.name, val });
-      } else {
-        miscTotal += val;
-      }
-    });
-    namedOthers.sort((a, b) => b.val - a.val);
-
-    const namedRows = namedOthers.map(n =>
-      `<div class="topcat-all-sub-row"><span>${n.icon || ''} ${escapeHtml(n.label)}</span><span>${App.formatCurrency(n.val)}</span></div>`
-    ).join('');
-    const miscRow = miscTotal > 0
-      ? `<div class="topcat-all-sub-row" style="color:var(--text-tertiary);"><span>Misc / uncategorized</span><span>${App.formatCurrency(miscTotal)}</span></div>`
-      : '';
-    const otherBreakdown = namedRows + miscRow;
+    const legendHtml = catMeta.map(c => `
+      <div class="stack-legend-item">
+        <span class="stack-legend-dot" style="background:${c.color};"></span>
+        ${escapeHtml(c.name)} <span style="color:var(--text-secondary);">${App.formatCurrency(overallTotals[c.id])}</span>
+      </div>
+    `).join('');
 
     return `
       <div class="insights-card">
         <div class="insights-section-title">Last 3 months</div>
         <div class="stack-chart">${barsHtml}</div>
         <div class="stack-legend">${legendHtml}</div>
-        ${otherBreakdown ? `
-          <div style="font-size:0.6875rem;color:var(--text-tertiary);margin-top:var(--space-3);">Inside "Other"</div>
-          <div class="topcat-all-subs" style="margin-top:4px;">${otherBreakdown}</div>
-        ` : ''}
       </div>
     `;
   },
