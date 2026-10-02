@@ -1235,10 +1235,6 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
-.topcat-subs { display: flex; gap: var(--space-3); margin-top: 2px; flex-wrap: wrap; }
-.topcat-sub { font-size: 0.6875rem; color: var(--text-tertiary); }
-.topcat-sub-amt { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-
 /* Stacked bar chart (6-month comparison) */
 .stack-chart {
   display: flex;
@@ -1367,10 +1363,7 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
 .bills-toggle button { border: none; background: none; color: var(--text-tertiary); font-size: 0.625rem; font-weight: 600; padding: 4px 8px; border-radius: var(--radius-full); cursor: pointer; white-space: nowrap; }
 .bills-toggle button.active { background: var(--bg-primary); color: var(--text-primary); }
 
-/* Top categories — expandable "all subcategories" detail */
-.topcat-details { margin-top: 4px; }
-.topcat-details summary { cursor: pointer; list-style: none; font-size: 0.6875rem; color: var(--text-tertiary); }
-.topcat-details summary::-webkit-details-marker { display: none; }
+/* Top categories — all non-zero subcategories, shown inline under each parent */
 .topcat-all-subs { margin-top: 4px; padding-left: var(--space-2); border-left: 2px solid var(--border-subtle); }
 .topcat-all-sub-row { display: flex; justify-content: space-between; font-size: 0.6875rem; color: var(--text-secondary); padding: 2px 0; }
 
@@ -2063,6 +2056,7 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
 }
 .tx-month-nav { gap: 0; padding: 0; overflow: hidden; }
 .tx-month-nav button { background: none; border: none; color: inherit; font-size: 1rem; cursor: pointer; padding: var(--space-2) var(--space-2); line-height: 1; }
+.tx-month-nav button:disabled { opacity: 0.25; cursor: default; pointer-events: none; }
 .tx-month-nav .month-label { font-size: 0.6875rem; font-weight: 600; padding: var(--space-2) var(--space-1); min-width: 72px; text-align: center; cursor: pointer; }
 
 /* Resumo do mês */
@@ -3381,7 +3375,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.01</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.02</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3600,7 +3594,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 190.01 · Oct 1, 2026</div>
+          <div class="app-version">Version 190.02 · Oct 1, 2026</div>
         </div>
       </div>
     </section>
@@ -8718,15 +8712,15 @@ const Insights = {
         <div class="insights-section-title">Income usage</div>
         <div class="flow-tiles">
           <div class="flow-tile">
-            <div class="flow-tile-label">Entrou</div>
+            <div class="flow-tile-label">Income</div>
             <div class="flow-tile-value" style="color:var(--success);">${App.formatCurrency(income)}</div>
           </div>
           <div class="flow-tile">
-            <div class="flow-tile-label">Saiu</div>
+            <div class="flow-tile-label">Left account</div>
             <div class="flow-tile-value">${App.formatCurrency(leftAccount)}</div>
           </div>
           <div class="flow-tile">
-            <div class="flow-tile-label">Gastou</div>
+            <div class="flow-tile-label">Spent</div>
             <div class="flow-tile-value" style="color:var(--danger);">${App.formatCurrency(spent)}</div>
           </div>
         </div>
@@ -8780,22 +8774,16 @@ const Insights = {
     const categoryRows = sorted.map(c => {
       const pct = totalSum > 0 ? (c.value / totalSum * 100).toFixed(0) : 0;
       const barW = max > 0 ? (c.value / max * 100).toFixed(1) : 0;
-      const allChildren = Object.entries(parentChildren[c.pid] || {}).sort((a, b) => b[1] - a[1]);
-      const previewChildren = allChildren.slice(0, 2)
-        .map(([cid, val]) => {
-          const ch = State.categories.find(x => x.id === cid);
-          return `<span class="topcat-sub">${ch?.icon || ''} ${escapeHtml(ch?.name || '?')} <span class="topcat-sub-amt">${App.formatCurrency(val)}</span></span>`;
-        }).join('');
-      const detailsBlock = allChildren.length > 0 ? `
-        <details class="topcat-details">
-          <summary>${allChildren.length > 2 ? `See all ${allChildren.length} subcategories` : 'Subcategories'}</summary>
-          <div class="topcat-all-subs">
-            ${allChildren.map(([cid, val]) => {
-              const ch = State.categories.find(x => x.id === cid);
-              return `<div class="topcat-all-sub-row"><span>${ch?.icon || ''} ${escapeHtml(ch?.name || '?')}</span><span>${App.formatCurrency(val)}</span></div>`;
-            }).join('')}
-          </div>
-        </details>
+      const allChildren = Object.entries(parentChildren[c.pid] || {})
+        .filter(([, val]) => val !== 0)
+        .sort((a, b) => b[1] - a[1]);
+      const subRows = allChildren.length > 0 ? `
+        <div class="topcat-all-subs">
+          ${allChildren.map(([cid, val]) => {
+            const ch = State.categories.find(x => x.id === cid);
+            return `<div class="topcat-all-sub-row"><span>${ch?.icon || ''} ${escapeHtml(ch?.name || '?')}</span><span>${App.formatCurrency(val)}</span></div>`;
+          }).join('')}
+        </div>
       ` : '';
       return `
         <div class="topcat-row">
@@ -8809,8 +8797,7 @@ const Insights = {
               <div class="topcat-bar-fill" style="width: ${barW}%; ${c.color ? `background:${c.color};` : ''}"></div>
             </div>
             <div class="topcat-amount">${App.formatCurrency(c.value)}</div>
-            ${previewChildren ? `<div class="topcat-subs">${previewChildren}</div>` : ''}
-            ${detailsBlock}
+            ${subRows}
           </div>
         </div>
       `;
@@ -8933,11 +8920,15 @@ const Insights = {
     const tags = allTags();
     const year = this.tagsYear;
     const yearLabel = year === 'all' ? 'All time' : year;
+    const years = this.getTagYears();
+    const yearIdx = years.indexOf(year);
+    const atFirst = yearIdx <= 0;
+    const atLast = yearIdx >= years.length - 1;
     const yearNav = `
       <div class="tx-month-nav" id="insights-tags-year-nav" style="background:var(--bg-tertiary);border:1px solid var(--border-subtle);">
-        <button data-tags-year-prev>‹</button>
+        <button data-tags-year-prev ${atFirst ? 'disabled' : ''}>‹</button>
         <span class="month-label" style="font-size:0.6875rem;font-weight:600;padding:var(--space-2) var(--space-1);min-width:70px;text-align:center;cursor:default;">${escapeHtml(yearLabel)}</span>
-        <button data-tags-year-next>›</button>
+        <button data-tags-year-next ${atLast ? 'disabled' : ''}>›</button>
       </div>
     `;
     const header = `
@@ -9061,13 +9052,20 @@ const Insights = {
       `;
     }).join('');
 
-    const legendHtml = catMeta.filter(c => overallTotals[c.id] || c.id === '__other')
-      .map(c => `
-        <div class="stack-legend-item">
-          <span class="stack-legend-dot" style="background:${c.color};"></span>
-          ${escapeHtml(c.name)}
-        </div>
-      `).join('');
+    const topCatOverallSum = topCatIds.reduce((s, id) => s + (overallTotals[id] || 0), 0);
+    const grandTotal = monthData.reduce((s, m) => s + m.total, 0);
+    const otherOverallTotal = grandTotal - topCatOverallSum;
+
+    const legendHtml = catMeta.filter(c => overallTotals[c.id] || (c.id === '__other' && otherOverallTotal > 0))
+      .map(c => {
+        const val = c.id === '__other' ? otherOverallTotal : overallTotals[c.id];
+        return `
+          <div class="stack-legend-item">
+            <span class="stack-legend-dot" style="background:${c.color};"></span>
+            ${escapeHtml(c.name)} <span style="color:var(--text-secondary);">${App.formatCurrency(val)}</span>
+          </div>
+        `;
+      }).join('');
 
     return `
       <div class="insights-card">
@@ -9177,8 +9175,8 @@ const Insights = {
 
     const billsToggle = `
       <div class="bills-toggle">
-        <button data-weekday-bills="exclude" class="${excludeBills ? 'active' : ''}">Sem contas fixas</button>
-        <button data-weekday-bills="include" class="${!excludeBills ? 'active' : ''}">Com contas fixas</button>
+        <button data-weekday-bills="exclude" class="${excludeBills ? 'active' : ''}">Exclude bills</button>
+        <button data-weekday-bills="include" class="${!excludeBills ? 'active' : ''}">Include bills</button>
       </div>
     `;
     const header = `
