@@ -3375,7 +3375,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.06</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.07</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3594,7 +3594,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 190.06 · Oct 1, 2026</div>
+          <div class="app-version">Version 190.07 · Oct 1, 2026</div>
         </div>
       </div>
     </section>
@@ -8447,6 +8447,8 @@ const Insights = {
   reportMonth: (() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })(),
   tagsYear: 'all',
   weekdayExcludeBills: true,
+  monthlyReportExcludeBills: false,
+  topCategoriesExcludeBills: false,
 
   render() {
     const container = document.getElementById('insights-page-content');
@@ -8569,7 +8571,11 @@ const Insights = {
 
   renderMonthlyReport() {
     const ym = this.reportMonth;
-    const txs = this.txsInMonth(ym).filter(t => !t.is_transfer && !t.is_payment && !t.is_refund && !t.is_adjustment);
+    const excludeBills = this.monthlyReportExcludeBills;
+    const txs = this.txsInMonth(ym).filter(t =>
+      !t.is_transfer && !t.is_payment && !t.is_refund && !t.is_adjustment &&
+      (!excludeBills || !this.isBillCategory(t.category_id))
+    );
 
     const spending = txs.filter(t => t.type === 'expense');
     const pvTotal   = spending.filter(t => t.owner === 'pv').reduce((s, t) => s + (Number(t.amount) || 0), 0);
@@ -8597,9 +8603,19 @@ const Insights = {
     });
     const cardRows = Object.values(cardMap).sort((a, b) => b.total - a.total);
 
+    const billsToggle = `
+      <div class="bills-toggle">
+        <button data-monthly-report-bills="exclude" class="${excludeBills ? 'active' : ''}">Exclude bills</button>
+        <button data-monthly-report-bills="include" class="${!excludeBills ? 'active' : ''}">Include bills</button>
+      </div>
+    `;
+
     return `
       <div class="insights-card">
-        <div class="insights-section-title">Monthly Report</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3);flex-wrap:wrap;gap:var(--space-2);">
+          <div class="insights-section-title" style="margin-bottom:0;">Monthly Report</div>
+          ${billsToggle}
+        </div>
 
         <div class="insights-section-title" style="margin-top:var(--space-2);">Spending by person</div>
         ${pvTotal === 0 && gigiTotal === 0 ? `<div style="font-size:0.8125rem;color:var(--text-tertiary);">No expenses this month.</div>` : `
@@ -8737,7 +8753,8 @@ const Insights = {
   // ============ Section 2: Top 5 categories, subcategories, and top 5 individual expenses ============
   renderTopCategories() {
     const ym = this.reportMonth;
-    const txs = this.txsInMonth(ym).filter(t => this.isSpending(t));
+    const excludeBills = this.topCategoriesExcludeBills;
+    const txs = this.txsInMonth(ym).filter(t => this.isSpending(t) && (!excludeBills || !this.isBillCategory(t.category_id)));
 
     // Aggregate by PARENT category; track ALL children per parent (for the expandable detail)
     const parentTotals = {};
@@ -8761,10 +8778,23 @@ const Insights = {
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
+    const billsToggle = `
+      <div class="bills-toggle">
+        <button data-topcat-bills="exclude" class="${excludeBills ? 'active' : ''}">Exclude bills</button>
+        <button data-topcat-bills="include" class="${!excludeBills ? 'active' : ''}">Include bills</button>
+      </div>
+    `;
+    const header = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3);flex-wrap:wrap;gap:var(--space-2);">
+        <div class="insights-section-title" style="margin-bottom:0;">Top categories</div>
+        ${billsToggle}
+      </div>
+    `;
+
     if (!sorted.length) {
       return `
         <div class="insights-card">
-          <div class="insights-section-title">Top categories</div>
+          ${header}
           <div class="empty-state-text">No spending this month.</div>
         </div>
       `;
@@ -8790,13 +8820,11 @@ const Insights = {
           <div class="topcat-icon" style="${c.color ? `background:${c.color}22;color:${c.color};` : ''}">${c.icon}</div>
           <div class="topcat-info">
             <div class="topcat-header">
-              <span class="topcat-name">${escapeHtml(c.name)}</span>
-              <span class="topcat-pct">${pct}%</span>
+              <span class="topcat-name">${escapeHtml(c.name)} <span class="topcat-pct">• ${App.formatCurrency(c.value)} • ${pct}%</span></span>
             </div>
             <div class="topcat-bar-track">
               <div class="topcat-bar-fill" style="width: ${barW}%; ${c.color ? `background:${c.color};` : ''}"></div>
             </div>
-            <div class="topcat-amount">${App.formatCurrency(c.value)}</div>
             ${subRows}
           </div>
         </div>
@@ -8823,7 +8851,7 @@ const Insights = {
 
     return `
       <div class="insights-card">
-        <div class="insights-section-title">Top categories</div>
+        ${header}
         ${categoryRows}
         ${itemRows ? `
           <div class="insights-section-title" style="margin-top:var(--space-4);">Top 5 expenses</div>
@@ -8971,8 +8999,9 @@ const Insights = {
     `;
   },
 
-  // ============ Section 3: 3-month stacked bars by category ============
-  renderMonthlyComparison() {
+  /** Shared by renderMonthlyComparison() and showRestCategories() — 3 months ending at the
+   *  toggled month, spending by raw category_id, excluding anything under "Bills". */
+  monthlyComparisonData() {
     const months = [];
     const [ry, rm] = this.reportMonth.split('-').map(Number);
     const anchor = new Date(ry, rm - 1, 1);
@@ -8983,7 +9012,6 @@ const Insights = {
       months.push({ ym, label });
     }
 
-    // For each month, aggregate spending by category (excludes anything under the "Bills" parent category)
     const monthData = months.map(m => {
       const txs = this.txsInMonth(m.ym).filter(t => this.isSpending(t) && !this.isBillCategory(t.category_id));
       const byCat = {};
@@ -8995,18 +9023,28 @@ const Insights = {
       return { ...m, byCat, total };
     });
 
-    // Every category that shows up in the window, sorted by overall total — no cap, no "Other" bucket.
     const overallTotals = {};
     monthData.forEach(m => {
       Object.entries(m.byCat).forEach(([k, v]) => {
         overallTotals[k] = (overallTotals[k] || 0) + v;
       });
     });
-    const allCatIds = Object.keys(overallTotals).sort((a, b) => overallTotals[b] - overallTotals[a]);
 
-    const catMeta = allCatIds.map((id, i) => {
+    return { monthData, overallTotals };
+  },
+
+  // ============ Section 3: 3-month stacked bars by category (top 6 + "rest" fill) ============
+  renderMonthlyComparison() {
+    const { monthData, overallTotals } = this.monthlyComparisonData();
+
+    const allCatIds = Object.keys(overallTotals).sort((a, b) => overallTotals[b] - overallTotals[a]);
+    const topCatIds = allCatIds.slice(0, 6);
+    const restCatIds = allCatIds.slice(6);
+    const restOverallTotal = restCatIds.reduce((s, id) => s + overallTotals[id], 0);
+
+    const catMeta = topCatIds.map((id, i) => {
       const cat = id === 'uncategorized' ? null : State.categories.find(c => c.id === id);
-      const hue = Math.round((i * 360) / Math.max(allCatIds.length, 1));
+      const hue = Math.round((i * 360) / Math.max(topCatIds.length, 1));
       return { id, name: cat?.name || 'Uncategorized', color: `hsl(${hue}, 62%, 58%)` };
     });
 
@@ -9021,7 +9059,8 @@ const Insights = {
       `;
     }
 
-    // Build stacked bars
+    // Build stacked bars — top 6 categories get their own color; anything else fills
+    // the rest of the bar as a plain neutral segment (keeps bar height = full month total).
     const barsHtml = monthData.map(m => {
       const total = m.total;
       const heightPct = (total / maxTotal) * 100;
@@ -9031,10 +9070,15 @@ const Insights = {
         const segH = total > 0 ? (val / total * 100) : 0;
         return `<div class="stack-segment" style="height:${segH}%; background:${c.color};" title="${c.name}: ${App.formatCurrency(val)}"></div>`;
       }).join('');
+      const topSum = topCatIds.reduce((s, id) => s + (m.byCat[id] || 0), 0);
+      const restVal = total - topSum;
+      const restSegment = restVal > 0.004
+        ? `<div class="stack-segment" style="height:${(restVal / total * 100)}%; background:var(--bg-tertiary);" title="Other categories: ${App.formatCurrency(restVal)}"></div>`
+        : '';
 
       return `
         <div class="stack-col">
-          <div class="stack-bar" style="height:${heightPct}%;">${segments}</div>
+          <div class="stack-bar" style="height:${heightPct}%;">${segments}${restSegment}</div>
           <div class="stack-label">${m.label}</div>
           <div class="stack-total">${total > 0 ? App.formatCurrency(total).replace('$', '$') : ''}</div>
         </div>
@@ -9053,8 +9097,30 @@ const Insights = {
         <div class="insights-section-title">Last 3 months</div>
         <div class="stack-chart">${barsHtml}</div>
         <div class="stack-legend">${legendHtml}</div>
+        ${restCatIds.length ? `
+          <button data-show-rest-categories class="section-add" style="margin-top:var(--space-3);">
+            See ${restCatIds.length} more categor${restCatIds.length === 1 ? 'y' : 'ies'} · ${App.formatCurrency(restOverallTotal)}
+          </button>
+        ` : ''}
       </div>
     `;
+  },
+
+  /** Modal for the "See N more categories" button on the Last 3 months card. */
+  showRestCategories() {
+    const { overallTotals } = this.monthlyComparisonData();
+    const allCatIds = Object.keys(overallTotals).sort((a, b) => overallTotals[b] - overallTotals[a]);
+    const restCatIds = allCatIds.slice(6);
+    const grandTotal = Object.values(overallTotals).reduce((s, v) => s + v, 0);
+
+    const rows = restCatIds.map(id => {
+      const cat = id === 'uncategorized' ? null : State.categories.find(c => c.id === id);
+      const val = overallTotals[id];
+      const pct = grandTotal > 0 ? (val / grandTotal * 100).toFixed(0) : 0;
+      return `<div class="topcat-all-sub-row"><span>${cat?.icon || ''} ${escapeHtml(cat?.name || 'Uncategorized')}</span><span>${App.formatCurrency(val)} · ${pct}%</span></div>`;
+    }).join('');
+
+    Modal.open('Other categories · Last 3 months', `<div class="topcat-all-subs" style="border-left:none;padding-left:0;">${rows}</div>`);
   },
 
   // ============ Section 3b: Income by month (6 months ending at the toggled month) ============
@@ -11161,6 +11227,25 @@ document.addEventListener('click', (e) => {
     const val = e.target.closest('[data-weekday-bills]').getAttribute('data-weekday-bills');
     Insights.weekdayExcludeBills = val === 'exclude';
     Insights.render(); return;
+  }
+
+  // Monthly Report — bills/no-bills toggle
+  if (e.target.closest('[data-monthly-report-bills]')) {
+    const val = e.target.closest('[data-monthly-report-bills]').getAttribute('data-monthly-report-bills');
+    Insights.monthlyReportExcludeBills = val === 'exclude';
+    Insights.render(); return;
+  }
+
+  // Top categories / Top 5 expenses — bills/no-bills toggle
+  if (e.target.closest('[data-topcat-bills]')) {
+    const val = e.target.closest('[data-topcat-bills]').getAttribute('data-topcat-bills');
+    Insights.topCategoriesExcludeBills = val === 'exclude';
+    Insights.render(); return;
+  }
+
+  // Last 3 months — "see the rest" of the categories beyond the top 6
+  if (e.target.closest('[data-show-rest-categories]')) {
+    Insights.showRestCategories(); return;
   }
 
   // Tags report — year navigation
