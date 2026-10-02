@@ -1356,6 +1356,33 @@ input[type="date"].form-input { -webkit-appearance: none; appearance: none; }
   flex-shrink: 0;
 }
 
+/* Entrou / Saiu / Gastou tiles */
+.flow-tiles { display: flex; gap: var(--space-2); margin: var(--space-3) 0; }
+.flow-tile { flex: 1; text-align: center; }
+.flow-tile-label { font-size: 0.625rem; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+.flow-tile-value { font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Bills toggle pill (weekday heatmap) */
+.bills-toggle { display: flex; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: var(--radius-full); padding: 2px; }
+.bills-toggle button { border: none; background: none; color: var(--text-tertiary); font-size: 0.625rem; font-weight: 600; padding: 4px 8px; border-radius: var(--radius-full); cursor: pointer; white-space: nowrap; }
+.bills-toggle button.active { background: var(--bg-primary); color: var(--text-primary); }
+
+/* Top categories — expandable "all subcategories" detail */
+.topcat-details { margin-top: 4px; }
+.topcat-details summary { cursor: pointer; list-style: none; font-size: 0.6875rem; color: var(--text-tertiary); }
+.topcat-details summary::-webkit-details-marker { display: none; }
+.topcat-all-subs { margin-top: 4px; padding-left: var(--space-2); border-left: 2px solid var(--border-subtle); }
+.topcat-all-sub-row { display: flex; justify-content: space-between; font-size: 0.6875rem; color: var(--text-secondary); padding: 2px 0; }
+
+/* Top 5 individual items */
+.top-item-row { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
+.top-item-row:last-child { border-bottom: none; padding-bottom: 0; }
+.top-item-icon { width: 26px; height: 26px; border-radius: 50%; background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; font-size: 0.8125rem; flex-shrink: 0; }
+.top-item-info { flex: 1; min-width: 0; }
+.top-item-name { font-size: 0.8125rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top-item-meta { font-size: 0.6875rem; color: var(--text-tertiary); }
+.top-item-amt { font-size: 0.8125rem; font-weight: 600; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
 /* Connection tab footer (info + version, compact) */
 .conn-footer-info {
   margin-top: var(--space-5);
@@ -3354,7 +3381,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v189.21</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.01</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3573,7 +3600,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 189.21 · Oct 1, 2026</div>
+          <div class="app-version">Version 190.01 · Oct 1, 2026</div>
         </div>
       </div>
     </section>
@@ -8425,21 +8452,39 @@ async function skipRecurrence(subscriptionId, specificDate = null) {
 const Insights = {
   reportMonth: (() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })(),
   tagsYear: 'all',
+  weekdayExcludeBills: true,
 
   render() {
     const container = document.getElementById('insights-page-content');
     if (!container) return;
     container.innerHTML = `
       ${this.renderWeeklyBudgets()}
+      ${this.renderMonthNav()}
       ${this.renderMonthlyReport()}
       ${this.renderIncomeUsage()}
       ${this.renderTopCategories()}
+      ${this.renderCategoryTrend()}
       ${this.renderTagsReport()}
       ${this.renderMonthlyComparison()}
       ${this.renderIncomeComparison()}
       ${this.renderWeekdayHeatmap()}
     `;
     this.updateReportNav();
+  },
+
+  /** Shared month toggle — drives every card below except Tags (own year nav) and the weekday heatmap (fixed 60-day window). */
+  renderMonthNav() {
+    const [y, m] = this.reportMonth.split('-').map(Number);
+    const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    return `
+      <div style="display:flex;justify-content:center;margin-bottom:var(--space-4);">
+        <div class="tx-month-nav" id="insights-month-nav" style="background:var(--bg-tertiary);border:1px solid var(--border-subtle);">
+          <button data-insights-month-prev>‹</button>
+          <span class="month-label" style="font-size:0.6875rem;font-weight:600;padding:var(--space-2) var(--space-1);min-width:90px;text-align:center;cursor:default;">${monthLabel}</span>
+          <button data-insights-month-next>›</button>
+        </div>
+      </div>
+    `;
   },
 
   // ============ Section 0: Weekly Budgets (custom per-category spending targets) ============
@@ -8558,19 +8603,9 @@ const Insights = {
     });
     const cardRows = Object.values(cardMap).sort((a, b) => b.total - a.total);
 
-    const [y, m] = ym.split('-').map(Number);
-    const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
     return `
       <div class="insights-card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3);">
-          <div class="insights-section-title" style="margin-bottom:0;">Monthly Report</div>
-          <div class="tx-month-nav" id="insights-month-nav" style="background:var(--bg-tertiary);border:1px solid var(--border-subtle);">
-            <button data-insights-month-prev>‹</button>
-            <span class="month-label" style="font-size:0.6875rem;font-weight:600;padding:var(--space-2) var(--space-1);min-width:90px;text-align:center;cursor:default;">${monthLabel}</span>
-            <button data-insights-month-next>›</button>
-          </div>
-        </div>
+        <div class="insights-section-title">Monthly Report</div>
 
         <div class="insights-section-title" style="margin-top:var(--space-2);">Spending by person</div>
         ${pvTotal === 0 && gigiTotal === 0 ? `<div style="font-size:0.8125rem;color:var(--text-tertiary);">No expenses this month.</div>` : `
@@ -8637,17 +8672,36 @@ const Insights = {
       .reduce((s, t) => s + (Number(t.amount) || 0), 0);
   },
 
-  currentMonth() {
-    const d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  /** Entrou (income) / Saiu (left an account — debit + card statement payments) / Gastou (all real spending,
+   *  debit + card purchases combined) — same three-way split already proven in Transactions.renderSummary(). */
+  monthFlowStats(ym) {
+    const txs = this.txsInMonth(ym);
+    const relevantTxs = txs.filter(t => !t.is_transfer && !t.is_payment);
+    const accountTxs = txs.filter(t => t.account_id && !t.card_id && !t.is_transfer);
+
+    let income = 0, spent = 0;
+    relevantTxs.forEach(t => {
+      const v = Number(t.amount) || 0;
+      if (t.is_refund) spent -= v;
+      else if (t.type === 'income') income += v;
+      else spent += v;
+    });
+
+    let leftAccount = 0;
+    accountTxs.forEach(t => {
+      const v = Number(t.amount) || 0;
+      if (t.is_refund) leftAccount -= v;
+      else if (t.type === 'expense') leftAccount += v;
+    });
+
+    return { income, leftAccount, spent };
   },
 
   // ============ Section 1: % income spent ============
   renderIncomeUsage() {
-    const ym = this.currentMonth();
-    const income = this.incomeInMonth(ym);
-    const spending = this.spendingInMonth(ym);
-    const pct = income > 0 ? Math.min(999, (spending / income) * 100) : 0;
+    const ym = this.reportMonth;
+    const { income, leftAccount, spent } = this.monthFlowStats(ym);
+    const pct = income > 0 ? Math.min(999, (spent / income) * 100) : 0;
     const pctDisplay = income > 0 ? `${pct.toFixed(0)}%` : '—';
     const barWidth = Math.min(100, pct);
     const barClass = pct < 70 ? 'low' : pct < 100 ? 'medium' : 'high';
@@ -8656,12 +8710,26 @@ const Insights = {
     if (income === 0) {
       subtitle = 'No income recorded this month';
     } else {
-      subtitle = `${App.formatCurrency(spending)} of ${App.formatCurrency(income)}`;
+      subtitle = `${App.formatCurrency(spent)} of ${App.formatCurrency(income)}`;
     }
 
     return `
       <div class="insights-card">
-        <div class="insights-section-title">Income usage this month</div>
+        <div class="insights-section-title">Income usage</div>
+        <div class="flow-tiles">
+          <div class="flow-tile">
+            <div class="flow-tile-label">Entrou</div>
+            <div class="flow-tile-value" style="color:var(--success);">${App.formatCurrency(income)}</div>
+          </div>
+          <div class="flow-tile">
+            <div class="flow-tile-label">Saiu</div>
+            <div class="flow-tile-value">${App.formatCurrency(leftAccount)}</div>
+          </div>
+          <div class="flow-tile">
+            <div class="flow-tile-label">Gastou</div>
+            <div class="flow-tile-value" style="color:var(--danger);">${App.formatCurrency(spent)}</div>
+          </div>
+        </div>
         <div class="insights-pct-value">${pctDisplay}</div>
         <div class="insights-pct-sub">${subtitle}</div>
         <div class="credit-bar-track" style="margin-top: var(--space-3);">
@@ -8672,12 +8740,12 @@ const Insights = {
     `;
   },
 
-  // ============ Section 2: Top 5 categories ============
+  // ============ Section 2: Top 5 categories, subcategories, and top 5 individual expenses ============
   renderTopCategories() {
-    const ym = this.currentMonth();
+    const ym = this.reportMonth;
     const txs = this.txsInMonth(ym).filter(t => this.isSpending(t));
 
-    // Aggregate by PARENT category; track children per parent
+    // Aggregate by PARENT category; track ALL children per parent (for the expandable detail)
     const parentTotals = {};
     const parentChildren = {};
     txs.forEach(t => {
@@ -8702,42 +8770,153 @@ const Insights = {
     if (!sorted.length) {
       return `
         <div class="insights-card">
-          <div class="insights-section-title">Top categories this month</div>
-          <div class="empty-state-text">No spending yet this month.</div>
+          <div class="insights-section-title">Top categories</div>
+          <div class="empty-state-text">No spending this month.</div>
         </div>
       `;
     }
 
     const max = sorted[0].value;
+    const categoryRows = sorted.map(c => {
+      const pct = totalSum > 0 ? (c.value / totalSum * 100).toFixed(0) : 0;
+      const barW = max > 0 ? (c.value / max * 100).toFixed(1) : 0;
+      const allChildren = Object.entries(parentChildren[c.pid] || {}).sort((a, b) => b[1] - a[1]);
+      const previewChildren = allChildren.slice(0, 2)
+        .map(([cid, val]) => {
+          const ch = State.categories.find(x => x.id === cid);
+          return `<span class="topcat-sub">${ch?.icon || ''} ${escapeHtml(ch?.name || '?')} <span class="topcat-sub-amt">${App.formatCurrency(val)}</span></span>`;
+        }).join('');
+      const detailsBlock = allChildren.length > 0 ? `
+        <details class="topcat-details">
+          <summary>${allChildren.length > 2 ? `See all ${allChildren.length} subcategories` : 'Subcategories'}</summary>
+          <div class="topcat-all-subs">
+            ${allChildren.map(([cid, val]) => {
+              const ch = State.categories.find(x => x.id === cid);
+              return `<div class="topcat-all-sub-row"><span>${ch?.icon || ''} ${escapeHtml(ch?.name || '?')}</span><span>${App.formatCurrency(val)}</span></div>`;
+            }).join('')}
+          </div>
+        </details>
+      ` : '';
+      return `
+        <div class="topcat-row">
+          <div class="topcat-icon" style="${c.color ? `background:${c.color}22;color:${c.color};` : ''}">${c.icon}</div>
+          <div class="topcat-info">
+            <div class="topcat-header">
+              <span class="topcat-name">${escapeHtml(c.name)}</span>
+              <span class="topcat-pct">${pct}%</span>
+            </div>
+            <div class="topcat-bar-track">
+              <div class="topcat-bar-fill" style="width: ${barW}%; ${c.color ? `background:${c.color};` : ''}"></div>
+            </div>
+            <div class="topcat-amount">${App.formatCurrency(c.value)}</div>
+            ${previewChildren ? `<div class="topcat-subs">${previewChildren}</div>` : ''}
+            ${detailsBlock}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const topItems = [...txs].sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0)).slice(0, 5);
+    const itemRows = topItems.map(t => {
+      const { parent, child } = categoryPath(t.category_id);
+      const cat = child || parent;
+      const [, mm, dd] = (t.date || '').split('-');
+      const dateLabel = mm ? `${mm}/${dd}` : '';
+      return `
+        <div class="top-item-row">
+          <div class="top-item-icon">${cat?.icon || '•'}</div>
+          <div class="top-item-info">
+            <div class="top-item-name">${escapeHtml(t.description || cat?.name || 'Transaction')}</div>
+            <div class="top-item-meta">${dateLabel}${cat ? ' · ' + escapeHtml(cat.name) : ''}</div>
+          </div>
+          <div class="top-item-amt">${App.formatCurrency(Number(t.amount) || 0)}</div>
+        </div>
+      `;
+    }).join('');
+
     return `
       <div class="insights-card">
-        <div class="insights-section-title">Top categories this month</div>
-        ${sorted.map(c => {
-          const pct = totalSum > 0 ? (c.value / totalSum * 100).toFixed(0) : 0;
-          const barW = max > 0 ? (c.value / max * 100).toFixed(1) : 0;
-          const topChildren = Object.entries(parentChildren[c.pid] || {})
-            .sort((a, b) => b[1] - a[1]).slice(0, 2)
-            .map(([cid, val]) => {
-              const ch = State.categories.find(x => x.id === cid);
-              return `<span class="topcat-sub">${ch?.icon || ''} ${escapeHtml(ch?.name || '?')} <span class="topcat-sub-amt">${App.formatCurrency(val)}</span></span>`;
-            }).join('');
-          return `
-            <div class="topcat-row">
-              <div class="topcat-icon" style="${c.color ? `background:${c.color}22;color:${c.color};` : ''}">${c.icon}</div>
-              <div class="topcat-info">
-                <div class="topcat-header">
-                  <span class="topcat-name">${escapeHtml(c.name)}</span>
-                  <span class="topcat-pct">${pct}%</span>
-                </div>
-                <div class="topcat-bar-track">
-                  <div class="topcat-bar-fill" style="width: ${barW}%; ${c.color ? `background:${c.color};` : ''}"></div>
-                </div>
-                <div class="topcat-amount">${App.formatCurrency(c.value)}</div>
-                ${topChildren ? `<div class="topcat-subs">${topChildren}</div>` : ''}
-              </div>
+        <div class="insights-section-title">Top categories</div>
+        ${categoryRows}
+        ${itemRows ? `
+          <div class="insights-section-title" style="margin-top:var(--space-4);">Top 5 expenses</div>
+          ${itemRows}
+        ` : ''}
+      </div>
+    `;
+  },
+
+  // ============ Section 2a: What changed — categories trending vs their own 3-month baseline ============
+  renderCategoryTrend() {
+    const ym = this.reportMonth;
+    const [ry, rm] = ym.split('-').map(Number);
+    const anchor = new Date(ry, rm - 1, 1);
+
+    const baselineMonths = [1, 2, 3].map(i => {
+      const d = new Date(anchor.getFullYear(), anchor.getMonth() - i, 1);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    });
+
+    const totalsFor = (yms) => {
+      const totals = {};
+      yms.forEach(y => {
+        this.txsInMonth(y).filter(t => this.isSpending(t)).forEach(t => {
+          const { parent } = categoryPath(t.category_id);
+          if (!parent) return;
+          totals[parent.id] = (totals[parent.id] || 0) + (Number(t.amount) || 0);
+        });
+      });
+      return totals;
+    };
+
+    const currentTotals = totalsFor([ym]);
+    const baselineTotals = totalsFor(baselineMonths);
+
+    const parentIds = new Set([...Object.keys(currentTotals), ...Object.keys(baselineTotals)]);
+    const deltas = Array.from(parentIds).map(pid => {
+      const cat = State.categories.find(c => c.id === pid);
+      const current = currentTotals[pid] || 0;
+      const baselineAvg = (baselineTotals[pid] || 0) / 3;
+      const delta = current - baselineAvg;
+      const pct = baselineAvg > 0 ? (delta / baselineAvg * 100) : (current > 0 ? 100 : 0);
+      return { cat, current, baselineAvg, delta, pct };
+    }).filter(d => d.cat && (d.current >= 5 || d.baselineAvg >= 5));
+
+    const up = deltas.filter(d => d.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 3);
+    const down = deltas.filter(d => d.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, 3);
+
+    if (!up.length && !down.length) {
+      return `
+        <div class="insights-card">
+          <div class="insights-section-title">What changed</div>
+          <div class="empty-state-text">Not enough history yet to compare.</div>
+        </div>
+      `;
+    }
+
+    const row = (d, isUp) => {
+      const color = isUp ? 'var(--danger)' : 'var(--success)';
+      const arrow = isUp ? '▲' : '▼';
+      const pctLabel = `${arrow} ${Math.abs(d.pct).toFixed(0)}%`;
+      return `
+        <div class="topcat-row">
+          <div class="topcat-icon" style="${d.cat.color ? `background:${d.cat.color}22;color:${d.cat.color};` : ''}">${d.cat.icon || '•'}</div>
+          <div class="topcat-info">
+            <div class="topcat-header">
+              <span class="topcat-name">${escapeHtml(d.cat.name)}</span>
+              <span style="font-size:0.75rem;font-weight:600;color:${color};">${pctLabel}</span>
             </div>
-          `;
-        }).join('')}
+            <div class="topcat-amount">${App.formatCurrency(d.current)} <span style="color:var(--text-tertiary);">vs ${App.formatCurrency(d.baselineAvg)} avg</span></div>
+          </div>
+        </div>
+      `;
+    };
+
+    return `
+      <div class="insights-card">
+        <div class="insights-section-title">What changed</div>
+        ${up.length ? `<div style="font-size:0.75rem;color:var(--text-tertiary);margin-bottom:var(--space-2);">Spending more than usual</div>${up.map(d => row(d, true)).join('')}` : ''}
+        ${down.length ? `<div style="font-size:0.75rem;color:var(--text-tertiary);margin:${up.length ? 'var(--space-4)' : '0'} 0 var(--space-2);">Spending less than usual</div>${down.map(d => row(d, false)).join('')}` : ''}
       </div>
     `;
   },
@@ -8801,12 +8980,13 @@ const Insights = {
     `;
   },
 
-  // ============ Section 3: 6-month stacked bars by category ============
+  // ============ Section 3: 3-month stacked bars by category ============
   renderMonthlyComparison() {
     const months = [];
-    const now = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const [ry, rm] = this.reportMonth.split('-').map(Number);
+    const anchor = new Date(ry, rm - 1, 1);
+    for (let i = 2; i >= 0; i--) {
+      const d = new Date(anchor.getFullYear(), anchor.getMonth() - i, 1);
       const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
       const label = d.toLocaleDateString(undefined, { month: 'short' });
       months.push({ ym, label });
@@ -8848,7 +9028,7 @@ const Insights = {
     if (monthData.every(m => m.total === 0)) {
       return `
         <div class="insights-card">
-          <div class="insights-section-title">Last 6 months</div>
+          <div class="insights-section-title">Last 3 months</div>
           <div class="empty-state-text">No spending data yet.</div>
         </div>
       `;
@@ -8891,19 +9071,20 @@ const Insights = {
 
     return `
       <div class="insights-card">
-        <div class="insights-section-title">Last 6 months</div>
+        <div class="insights-section-title">Last 3 months</div>
         <div class="stack-chart">${barsHtml}</div>
         <div class="stack-legend">${legendHtml}</div>
       </div>
     `;
   },
 
-  // ============ Section 3b: Income by month (last 6 months, by owner) ============
+  // ============ Section 3b: Income by month (6 months ending at the toggled month) ============
   renderIncomeComparison() {
     const months = [];
-    const now = new Date();
+    const [ry, rm] = this.reportMonth.split('-').map(Number);
+    const anchor = new Date(ry, rm - 1, 1);
     for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const d = new Date(anchor.getFullYear(), anchor.getMonth() - i, 1);
       const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
       const label = d.toLocaleDateString(undefined, { month: 'short' });
       months.push({ ym, label });
@@ -8968,17 +9149,25 @@ const Insights = {
     `;
   },
 
+  /** A transaction counts as a "bill" if its category rolls up under the parent category "Bills". */
+  isBillCategory(categoryId) {
+    return categoryPath(categoryId).parent?.name === 'Bills';
+  },
+
   // ============ Section 4: Spending by weekday ============
   renderWeekdayHeatmap() {
-    // Last 60 days of spending
+    // Last 60 days of spending — fixed rolling window, intentionally does NOT follow the
+    // shared month toggle (kept as-is per user preference; Tags is the only other exception).
     const today = new Date();
     const cutoff = new Date(today.getTime() - 60 * 24 * 60 * 60 * 1000);
     const cutoffStr = cutoff.toISOString().split('T')[0];
+    const excludeBills = this.weekdayExcludeBills;
 
     const totals = [0, 0, 0, 0, 0, 0, 0]; // Sun-Sat
     State.transactions.forEach(t => {
       if (!t.date || t.date < cutoffStr) return;
       if (!this.isSpending(t)) return;
+      if (excludeBills && this.isBillCategory(t.category_id)) return;
       const d = new Date(t.date + 'T12:00:00');
       const dow = d.getDay();
       totals[dow] += Number(t.amount) || 0;
@@ -8986,11 +9175,24 @@ const Insights = {
     const max = Math.max(...totals, 1);
     const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+    const billsToggle = `
+      <div class="bills-toggle">
+        <button data-weekday-bills="exclude" class="${excludeBills ? 'active' : ''}">Sem contas fixas</button>
+        <button data-weekday-bills="include" class="${!excludeBills ? 'active' : ''}">Com contas fixas</button>
+      </div>
+    `;
+    const header = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3);flex-wrap:wrap;gap:var(--space-2);">
+        <div class="insights-section-title" style="margin-bottom:0;">Spending by weekday (last 60 days)</div>
+        ${billsToggle}
+      </div>
+    `;
+
     const allZero = totals.every(v => v === 0);
     if (allZero) {
       return `
         <div class="insights-card">
-          <div class="insights-section-title">Spending by weekday (last 60 days)</div>
+          ${header}
           <div class="empty-state-text">No spending data yet.</div>
         </div>
       `;
@@ -8998,7 +9200,7 @@ const Insights = {
 
     return `
       <div class="insights-card">
-        <div class="insights-section-title">Spending by weekday (last 60 days)</div>
+        ${header}
         <div class="heatmap-rows">
           ${labels.map((lab, i) => {
             const val = totals[i];
@@ -10972,6 +11174,13 @@ document.addEventListener('click', (e) => {
     const [y, m] = Insights.reportMonth.split('-').map(Number);
     const next = new Date(y, m, 1);
     Insights.reportMonth = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0');
+    Insights.render(); return;
+  }
+
+  // Weekday heatmap — bills/no-bills toggle
+  if (e.target.closest('[data-weekday-bills]')) {
+    const val = e.target.closest('[data-weekday-bills]').getAttribute('data-weekday-bills');
+    Insights.weekdayExcludeBills = val === 'exclude';
     Insights.render(); return;
   }
 
