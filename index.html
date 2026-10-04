@@ -3375,7 +3375,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.11</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.12</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3594,7 +3594,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 190.11 · Oct 1, 2026</div>
+          <div class="app-version">Version 190.12 · Oct 3, 2026</div>
         </div>
       </div>
     </section>
@@ -6482,6 +6482,11 @@ const Transactions = {
     const byBadge = (registeredBy && source && registeredBy !== source.owner)
       ? `<span class="meta-by">by ${this.ownerAvatar(registeredBy, 12)}</span>`
       : '';
+    // Purchases in the few days around a card's closing day can post to either
+    // invoice depending on bank timing — flag them so it's obvious at a glance.
+    const boundaryBadge = (card && Invoice.isAmbiguous(t.date, card))
+      ? dotBadge('⚠ near close', '#fbbf24')
+      : '';
     const catLabel = catChild?.name || catParent?.name || null;
     const catBadge = catLabel
       ? `<span class="meta-cat" style="${iconColor ? `color:${iconColor};` : ''}">${escapeHtml(catLabel)}</span>`
@@ -6520,6 +6525,7 @@ const Transactions = {
               <span>·</span>
               <span class="meta-source">${escapeHtml(sourceLabel)} ${sourceOwnerAvatar}</span>
               ${installmentBadge ? `<span>·</span>${installmentBadge}` : ''}
+              ${boundaryBadge ? `<span>·</span>${boundaryBadge}` : ''}
               ${byBadge ? `<span>·</span>${byBadge}` : ''}
             </div>
             ${secondLine}
@@ -9865,6 +9871,12 @@ const Cards = {
     const badgeLabel = t.is_adjustment ? 'Adjustment' : (isIncome ? 'Refund' : null);
     const badgeColor = t.is_adjustment ? '#f59e0b' : 'var(--success)';
     const badge = badgeLabel ? `<span class="card-badge" style="background:${badgeColor}22;color:${badgeColor};">${badgeLabel}</span>` : '';
+    // Purchases in the few days around the closing day can post to either invoice
+    // depending on bank timing — flag them so it's obvious at a glance.
+    const card = State.cards.find(c => c.id === t.card_id);
+    const boundaryBadge = (card && Invoice.isAmbiguous(t.date, card))
+      ? dotBadge('⚠ near close', '#fbbf24')
+      : '';
 
     return `
       <div class="tx-row" data-edit-tx="${t.id}">
@@ -9875,6 +9887,7 @@ const Cards = {
             <span>${this.formatShortDate(this.parseDate(t.date))}</span>
             ${installmentLabel ? `<span>·</span>${installmentLabel}` : ''}
             ${badge ? `<span>·</span>${badge}` : ''}
+            ${boundaryBadge ? `<span>·</span>${boundaryBadge}` : ''}
             <span>·</span>
             <span class="owner-tag ${t.owner}">${this.ownerLabel(t.owner)}</span>
           </div>
