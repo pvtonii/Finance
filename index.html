@@ -3375,7 +3375,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.14</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.15</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3594,7 +3594,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 190.14 · Oct 3, 2026</div>
+          <div class="app-version">Version 190.15 · Oct 13, 2026</div>
         </div>
       </div>
     </section>
@@ -8330,24 +8330,24 @@ async function confirmRecurrence(subscriptionId, specificDate = null) {
 
   const isIntervalSub = isIntervalBased(s);
   const prevLastConfirmedMonth = s.last_confirmed_month ?? null;
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
   let date, monthKey;
   if (isIntervalSub) {
     // Interval-based (weekly/quinzenal) always needs a specific occurrence date
     date = specificDate;
     monthKey = null; // uses confirmed_dates instead
-  } else if (specificDate) {
-    // Monthly past-due confirm: use the given date + its own month
+  } else if (specificDate && specificDate.substring(0, 7) !== todayStr.substring(0, 7)) {
+    // Backfilling an earlier (overdue) month — keep it dated within that month
     date = specificDate;
     monthKey = specificDate.substring(0, 7) + '-01';
   } else {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth();
-    const lastDay = new Date(year, month + 1, 0).getDate();
-    const day = Math.min(Number(s.billing_day) || 1, lastDay);
-    date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    monthKey = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    // Current month — use the actual day you clicked confirm, not the
+    // subscription's billing day (covers both "Upcoming this month" and the
+    // no-specific-date fallback for card-tracked/yearly subs).
+    date = todayStr;
+    monthKey = `${todayStr.substring(0, 7)}-01`;
   }
 
   try {
