@@ -3395,7 +3395,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.17</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.18</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3614,7 +3614,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 190.17 · Oct 19, 2026</div>
+          <div class="app-version">Version 190.18 · Oct 19, 2026</div>
         </div>
       </div>
     </section>
@@ -7694,9 +7694,19 @@ function formatAmountInput(value) {
 function attachCurrencyMask(el) {
   if (!el || el._currencyMaskAttached) return;
   el._currencyMaskAttached = true;
+  el._calcPrefix = ''; // finalized part of the expression (numbers + operators already locked in)
   el.addEventListener('focus', () => { if (!el._calcMode) el.select(); });
   el.addEventListener('input', () => {
-    if (el._calcMode) return; // mid-expression — let the field hold raw text as typed
+    if (el._calcMode) {
+      // Mask only the CURRENT number segment (the part after the last operator) —
+      // the already-finalized prefix is left untouched.
+      const prefix = el._calcPrefix || '';
+      const tail = el.value.startsWith(prefix) ? el.value.slice(prefix.length) : el.value;
+      const digits = tail.replace(/\D/g, '');
+      const masked = digits ? (parseInt(digits, 10) / 100).toFixed(2) : '';
+      el.value = prefix + masked;
+      return;
+    }
     const digits = el.value.replace(/\D/g, '');
     if (!digits) { el.value = ''; return; }
     const cents = parseInt(digits, 10);
@@ -7719,11 +7729,15 @@ function attachCurrencyMask(el) {
       if (op === 'C') {
         el.value = '';
         el._calcMode = false;
+        el._calcPrefix = '';
       } else if (op === '=') {
         evaluateCalcField(el);
       } else {
-        el.value = (el.value || '0') + OP_MAP[op];
+        // Replace a trailing operator instead of stacking two in a row
+        let val = (el.value || '0').replace(/[+\-*/]$/, '');
+        el.value = val + OP_MAP[op];
         el._calcMode = true;
+        el._calcPrefix = el.value; // everything typed so far (incl. this operator) is now locked in
       }
       el.focus();
     });
@@ -7744,6 +7758,7 @@ function evaluateCalcField(el) {
   }
   el.value = result !== null ? Math.abs(result).toFixed(2) : '';
   el._calcMode = false;
+  el._calcPrefix = '';
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
