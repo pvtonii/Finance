@@ -3395,7 +3395,7 @@ html { scroll-behavior: smooth; }
       <h1 class="text-display" id="header-title">Finance</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.20</span>
+      <span style="font-size:0.625rem;color:var(--text-tertiary);letter-spacing:0.02em;">v190.21</span>
       <button class="theme-toggle" id="refresh-btn" aria-label="Refresh app" title="Refresh">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M21 12a9 9 0 11-3-6.7L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3431,12 +3431,12 @@ html { scroll-behavior: smooth; }
         </div>
       </div>
 
-      <!-- Due this month + End of month (lado a lado) -->
+      <!-- End of next month + End of month (lado a lado) -->
       <div class="dashboard-cards-row">
-        <div class="dash-card fade-in" id="dash-due">
-          <div class="dash-card-label">Due this month</div>
-          <div class="dash-card-value text-mono text-danger" id="dash-due-value">-$0.00</div>
-          <div class="dash-card-sub" id="dash-due-sub">bills + subscriptions</div>
+        <div class="dash-card fade-in" id="dash-next" style="cursor:pointer;" title="Tap for breakdown">
+          <div class="dash-card-label" id="dash-next-label">End of next month</div>
+          <div class="dash-card-value text-mono" id="dash-next-value">$0.00</div>
+          <div class="dash-card-sub" id="dash-next-sub">projected · tap for details</div>
         </div>
         <div class="dash-card highlight fade-in" id="dash-projected" style="cursor:pointer;" title="Tap for breakdown">
           <div class="dash-card-label">End of month</div>
@@ -3614,7 +3614,7 @@ html { scroll-behavior: smooth; }
           <p class="conn-footer-text">
             Credentials are stored on your device (localStorage). They aren't sent anywhere except Supabase.
           </p>
-          <div class="app-version">Version 190.20 · Nov 3, 2026</div>
+          <div class="app-version">Version 190.21 · Nov 16, 2026</div>
         </div>
       </div>
     </section>
@@ -10126,7 +10126,12 @@ const Dashboard = {
       document.getElementById('dash-gigi-balance').textContent = App.formatCurrency(byOwner.gigi);
     }
 
-    animCounter(document.getElementById('dash-due-value'), -cardsDue);
+    // End of next month = this month's projection carried into next month
+    const nextProj = this.calcNextMonthProjection(projected);
+    const nextValEl = document.getElementById('dash-next-value');
+    animCounter(nextValEl, nextProj.total);
+    nextValEl.classList.toggle('text-danger', nextProj.total < 0);
+    document.getElementById('dash-next-label').textContent = `End of ${nextProj.monthName}`;
     animCounter(document.getElementById('dash-projected-value'), projected);
 
     // Cor do "fim do mês"
@@ -10149,12 +10154,6 @@ const Dashboard = {
         earlyEl.style.display = 'none';
       }
     }
-
-    const cardsCount = State.cards.length;
-    const detail = cardsCount === 0
-      ? 'no cards'
-      : `${cardsCount} ${cardsCount === 1 ? 'card' : 'cards'}`;
-    document.getElementById('dash-due-sub').textContent = detail;
 
     // Movimentação do mês
     animCounter(document.getElementById('dash-income'), monthStats.income, '+');
@@ -10311,6 +10310,172 @@ const Dashboard = {
     const incomeTotal = items.filter(x => x.type === 'income').reduce((acc, x) => acc + x.amount, 0);
     const total = items.filter(x => x.type !== 'income').reduce((acc, x) => acc + x.amount, 0);
     return { items, total, incomeTotal, nextMonthName };
+  },
+
+  /**
+   * End-of-NEXT-month projection: starts from this month's End of month figure
+   * and walks one month further:
+   *   + account transactions already entered and dated next month (installments, scheduled)
+   *   - card invoices whose due date falls next month (remaining after payments),
+   *     including any older unpaid invoice not already counted in this month's projection
+   *   - card-charged subs not entered yet whose charge lands in one of those invoices
+   *   - account bills recurring next month (not confirmed early)
+   *   + recurring income next month (not confirmed early)
+   */
+  calcNextMonthProjection(projectedThisMonth) {
+    const now = new Date();
+    const nowYear = now.getFullYear(), nowMonth = now.getMonth();
+    const nextRef = new Date(nowYear, nowMonth + 1, 1);
+    const nY = nextRef.getFullYear(), nM = nextRef.getMonth();
+    const pad = n => String(n).padStart(2, '0');
+    const nextYm = `${nY}-${pad(nM + 1)}`;
+    const nextInvoice = `${nextYm}-01`;
+    const curYm = `${nowYear}-${pad(nowMonth + 1)}`;
+    const nextStart = `${nextYm}-01`;
+    const nextEnd = `${nextYm}-${pad(new Date(nY, nM + 1, 0).getDate())}`;
+    const monthName = nextRef.toLocaleString('en-US', { month: 'long' });
+
+    // 1) Account transactions already entered for next month
+    const savingsIds = new Set(State.accounts.filter(a => a.type === 'savings').map(a => a.id));
+    const futureTxs = State.transactions
+      .filter(t => t.account_id && !t.card_id && !savingsIds.has(t.account_id) && (t.date || '') >= nextStart && (t.date || '') <= nextEnd)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const futureNet = futureTxs.reduce((s, t) => s + (t.type === 'income' ? 1 : -1) * (Number(t.amount) || 0), 0);
+
+    // 2) Card invoices due next month (+ any unpaid one skipped by this month's projection)
+    const cardItems = [];
+    State.cards.forEach(card => {
+      const oldest = Invoice.getNextUnpaidInvoice(card.id);
+      // The oldest unpaid invoice is already in this month's projection if it's due by now
+      let countedThisMonth = null;
+      if (oldest) {
+        const [y, mo] = oldest.split('-').map(Number);
+        if (isDueByMonth(new Date(y, mo - 1, Number(card.due_day)), nowYear, nowMonth)) countedThisMonth = oldest;
+      }
+      const months = new Set(Invoice.getCardInvoiceMonths(card.id).filter(m => oldest && m >= oldest && m <= nextInvoice));
+      months.add(nextInvoice);
+      months.forEach(m => {
+        if (m === countedThisMonth) return;
+        const remaining = Math.max(0, Invoice.getInvoiceTotal(card.id, m) - Invoice.getInvoicePaid(card.id, m));
+        cardItems.push({ card, invoice: m, amount: remaining, subs: [] });
+      });
+    });
+
+    // 3) Card-charged subs not entered yet → add to the invoice they'll land in
+    const subCharges = [];
+    State.subscriptions.forEach(s => {
+      if (!s.is_active || !s.card_id || s.type === 'income') return;
+      const card = State.cards.find(c => c.id === s.card_id);
+      if (!card || !card.closing_day || !card.due_day) return;
+      const amount = Number(s.amount) || 0;
+      if (!amount) return;
+      const dates = [];
+      if (isIntervalBased(s) && s.billing_start_date) {
+        const confirmed = JSON.parse(s.confirmed_dates || '[]');
+        [[nowYear, nowMonth], [nY, nM]].forEach(([y, m]) =>
+          getOccurrences(s, y, m).forEach(d => { if (!confirmed.includes(d)) dates.push(d); }));
+      } else {
+        [[nowYear, nowMonth, curYm], [nY, nM, nextYm]].forEach(([y, m, ym]) => {
+          if (!billingMonthMatches(s, m + 1)) return;
+          if (s.last_confirmed_month && s.last_confirmed_month.slice(0, 7) >= ym) return;
+          const day = Math.min(Number(s.billing_day) || 1, new Date(y, m + 1, 0).getDate());
+          dates.push(`${y}-${pad(m + 1)}-${pad(day)}`);
+        });
+      }
+      dates.forEach(d => {
+        if (Invoice.computeMonthString(d, card) !== nextInvoice) return;
+        subCharges.push({ card, name: s.name, amount, date: d });
+      });
+    });
+    subCharges.forEach(c => {
+      const item = cardItems.find(x => x.card.id === c.card.id && x.invoice === nextInvoice);
+      if (item) { item.subs.push(c); item.amount += c.amount; }
+    });
+    const cardList = cardItems.filter(x => x.amount > 0.005).map(x => {
+      const [y, mo] = x.invoice.split('-').map(Number);
+      const due = new Date(y, mo - 1, Number(x.card.due_day));
+      return { ...x, dueDate: due, dueDateStr: due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) };
+    }).sort((a, b) => a.dueDate - b.dueDate);
+    const cardsTotal = cardList.reduce((s, x) => s + x.amount, 0);
+
+    // 4) Account-based recurring bills + income next month
+    const recItems = [];
+    State.subscriptions.forEach(s => {
+      if (!s.is_active || s.card_id) return;
+      const amount = Number(s.amount) || 0;
+      if (!amount) return;
+      if (isIntervalBased(s) && s.billing_start_date) {
+        const confirmed = JSON.parse(s.confirmed_dates || '[]');
+        getOccurrences(s, nY, nM).forEach(d => {
+          if (!confirmed.includes(d)) recItems.push({ s, amount, date: d });
+        });
+        return;
+      }
+      if (!billingMonthMatches(s, nM + 1)) return;
+      if (s.last_confirmed_month && s.last_confirmed_month.slice(0, 7) >= nextYm) return;
+      const day = Math.min(Number(s.billing_day) || 1, new Date(nY, nM + 1, 0).getDate());
+      recItems.push({ s, amount, date: `${nextYm}-${pad(day)}` });
+    });
+    recItems.sort((a, b) => a.date.localeCompare(b.date));
+    const bills = recItems.filter(x => x.s.type !== 'income');
+    const incomes = recItems.filter(x => x.s.type === 'income');
+    const billsTotal = bills.reduce((s, x) => s + x.amount, 0);
+    const incomeTotal = incomes.reduce((s, x) => s + x.amount, 0);
+
+    const total = projectedThisMonth + futureNet - cardsTotal - billsTotal + incomeTotal;
+    return { total, monthName, projectedThisMonth, futureTxs, futureNet, cardList, cardsTotal, bills, billsTotal, incomes, incomeTotal };
+  },
+
+  showNextMonthBreakdown() {
+    const nowRef = new Date();
+    const thisMonthName = nowRef.toLocaleString('en-US', { month: 'long' });
+    const liquid = this.calcLiquidBalance();
+    const nowYear = nowRef.getFullYear(), nowMonth = nowRef.getMonth();
+    const cardsDue = State.cards.reduce((sum, card) => {
+      const m = Invoice.getNextUnpaidInvoice(card.id);
+      if (!m) return sum;
+      const [y, mo] = m.split('-').map(Number);
+      if (!isDueByMonth(new Date(y, mo - 1, Number(card.due_day)), nowYear, nowMonth)) return sum;
+      return sum + Math.max(0, Invoice.getInvoiceTotal(card.id, m) - Invoice.getInvoicePaid(card.id, m));
+    }, 0);
+    const pendingRec = this.calcRecurrencesPending();
+    const projected = liquid - cardsDue - pendingRec.accountExpense + pendingRec.income;
+    const p = this.calcNextMonthProjection(projected);
+
+    const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const sectionRow = (label, amount, cls) => `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border-subtle);">
+        <span style="color:var(--text-secondary);font-size:0.875rem;">${label}</span>
+        <span class="text-mono ${cls}" style="font-size:0.875rem;font-weight:600;">${amount}</span>
+      </div>`;
+    const itemRow = (name, amt, sign, cls, date = '', indent = 12) =>
+      `<div style="display:flex;justify-content:space-between;padding:3px 0 3px ${indent}px;">
+        <span style="color:var(--text-tertiary);font-size:0.8125rem;">${escapeHtml(name)}${date ? `<span style="font-size:0.6rem;opacity:0.5;margin-left:5px;">${date}</span>` : ''}</span>
+        <span class="text-mono ${cls}" style="font-size:0.8125rem;">${sign}${App.formatCurrency(amt)}</span>
+      </div>`;
+    const money = (v, sign = true) => (v < 0 ? '-' : (sign ? '+' : '')) + App.formatCurrency(Math.abs(v));
+
+    const body = `
+      <div style="padding-bottom:var(--space-2);">
+        ${sectionRow(`End of ${thisMonthName}`, App.formatCurrency(p.projectedThisMonth), p.projectedThisMonth >= 0 ? 'text-success' : 'text-danger')}
+        ${p.futureTxs.length ? sectionRow(`Already entered (${p.monthName})`, money(p.futureNet), p.futureNet >= 0 ? 'text-success' : 'text-danger')
+          + p.futureTxs.map(t => itemRow(t.description || '—', Number(t.amount) || 0, t.type === 'income' ? '+' : '-', t.type === 'income' ? 'text-success' : 'text-danger', fmtDate(t.date))).join('') : ''}
+        ${p.cardList.length ? sectionRow(`Cards due (${p.monthName})`, '-' + App.formatCurrency(p.cardsTotal), 'text-danger')
+          + p.cardList.map(c => itemRow(c.card.name, c.amount, '-', 'text-danger', c.dueDateStr)
+              + c.subs.map(sc => itemRow(`incl. ${sc.name}`, sc.amount, '+', 'text-tertiary', fmtDate(sc.date), 24)).join('')).join('') : ''}
+        ${p.bills.length ? sectionRow('Bills', '-' + App.formatCurrency(p.billsTotal), 'text-danger')
+          + p.bills.map(x => itemRow(x.s.name, x.amount, '-', 'text-danger', fmtDate(x.date))).join('') : ''}
+        ${p.incomes.length ? sectionRow('Income', '+' + App.formatCurrency(p.incomeTotal), 'text-success')
+          + p.incomes.map(x => itemRow(x.s.name, x.amount, '+', 'text-success', fmtDate(x.date))).join('') : ''}
+        <div style="border-top:2px solid var(--border);margin:10px 0;"></div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;">
+          <span style="font-weight:600;">End of ${p.monthName}</span>
+          <span class="text-mono ${p.total >= 0 ? 'text-success' : 'text-danger'}" style="font-size:1.125rem;font-weight:700;">${App.formatCurrency(p.total)}</span>
+        </div>
+        <div style="font-size:0.6875rem;color:var(--text-tertiary);padding-top:6px;">Card invoices keep growing as you spend — purchases landing in ${p.monthName}'s invoices update this number.</div>
+      </div>`;
+
+    Modal.open(`${p.monthName} projection`, body);
   },
 
   showProjectedBreakdown() {
@@ -11009,6 +11174,8 @@ if (categorySelect) {
 // Dashboard hero toggle: checking → savings → total → spending → checking …
 const projCard = document.getElementById('dash-projected');
 if (projCard) projCard.addEventListener('click', () => Dashboard.showProjectedBreakdown());
+const nextCard = document.getElementById('dash-next');
+if (nextCard) nextCard.addEventListener('click', () => Dashboard.showNextMonthBreakdown());
 
 const heroToggle = document.getElementById('dash-today-toggle');
 if (heroToggle) {
